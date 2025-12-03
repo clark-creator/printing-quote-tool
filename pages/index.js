@@ -837,8 +837,22 @@ export default function PrintingQuoteTool() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Number of SKUs/Designs</label>
                 <input type="number" min="1" max="1000" value={numDesigns} onChange={(e) => setNumDesigns(Math.min(1000, Math.max(1, Number(e.target.value) || 1)))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                <p className="text-sm text-gray-500 mt-1">{includedDesigns} design{includedDesigns !== 1 ? 's' : ''} included{extraDesigns > 0 && ` • ${extraDesigns} extra @ $35 each`}</p>
+                <p className="text-sm text-gray-500 mt-1">{includedDesigns} design{includedDesigns !== 1 ? 's' : ''} included (1 per 1,000 units){extraDesigns > 0 && ` • ${extraDesigns} extra @ $35 each`}</p>
               </div>
+
+              {extraDesigns > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Number of extra designs to waive fee for</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={extraDesigns}
+                    value={designWaivers}
+                    onChange={(e) => setDesignWaivers(Math.min(Number(e.target.value), extraDesigns))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Gloss Finish</label>
