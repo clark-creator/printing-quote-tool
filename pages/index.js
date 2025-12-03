@@ -3,18 +3,14 @@ import { Calculator, DollarSign, TrendingUp, Plus, Edit2, Trash2, Settings, File
 
 export default function PrintingQuoteTool() {
   // Device type management
-  const [deviceTypes, setDeviceTypes] = useState([
-    { name: '1mg Disposable', capacity: 88 },
-    { name: '2mg Disposable', capacity: 77 },
-    { name: 'MK Lighter', capacity: 80 }
-  ]);
+  const [deviceTypes, setDeviceTypes] = useState([]);
   const [showDeviceManager, setShowDeviceManager] = useState(false);
   const [editingDevice, setEditingDevice] = useState(null);
   const [newDeviceName, setNewDeviceName] = useState('');
   const [newDeviceCapacity, setNewDeviceCapacity] = useState(80);
 
   // Account manager management
-  const [accountManagers, setAccountManagers] = useState(['Ryan', 'Kyle', 'Anthony', 'Clarence']);
+  const [accountManagers, setAccountManagers] = useState([]);
   const [showManagerEditor, setShowManagerEditor] = useState(false);
   const [newManagerName, setNewManagerName] = useState('');
 
@@ -24,7 +20,7 @@ export default function PrintingQuoteTool() {
 
   // Project Details
   const [clientName, setClientName] = useState('');
-  const [accountManager, setAccountManager] = useState('Ryan');
+  const [accountManager, setAccountManager] = useState('');
   const [selectedDevice, setSelectedDevice] = useState(0);
   const [quantity, setQuantity] = useState(1000);
   const [quantityInput, setQuantityInput] = useState('1000');
@@ -61,6 +57,73 @@ export default function PrintingQuoteTool() {
   const [historySearch, setHistorySearch] = useState('');
   const [currentQuoteId, setCurrentQuoteId] = useState(null);
   const [saveMessage, setSaveMessage] = useState('');
+
+  // Default values
+  const defaultDeviceTypes = [
+    { name: '1mg Disposable', capacity: 88 },
+    { name: '2mg Disposable', capacity: 77 },
+    { name: 'MK Lighter', capacity: 80 }
+  ];
+  const defaultAccountManagers = ['Ryan', 'Kyle', 'Anthony', 'Clarence'];
+
+  // Load device types from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('device-types');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setDeviceTypes(parsed.length > 0 ? parsed : defaultDeviceTypes);
+      } else {
+        setDeviceTypes(defaultDeviceTypes);
+        localStorage.setItem('device-types', JSON.stringify(defaultDeviceTypes));
+      }
+    } catch (e) {
+      console.error('Failed to load device types:', e);
+      setDeviceTypes(defaultDeviceTypes);
+    }
+  }, []);
+
+  // Save device types to localStorage whenever they change
+  useEffect(() => {
+    if (deviceTypes.length > 0) {
+      try {
+        localStorage.setItem('device-types', JSON.stringify(deviceTypes));
+      } catch (e) {
+        console.error('Failed to save device types:', e);
+      }
+    }
+  }, [deviceTypes]);
+
+  // Load account managers from localStorage on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('account-managers');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setAccountManagers(parsed.length > 0 ? parsed : defaultAccountManagers);
+        setAccountManager(parsed.length > 0 ? parsed[0] : defaultAccountManagers[0]);
+      } else {
+        setAccountManagers(defaultAccountManagers);
+        setAccountManager(defaultAccountManagers[0]);
+        localStorage.setItem('account-managers', JSON.stringify(defaultAccountManagers));
+      }
+    } catch (e) {
+      console.error('Failed to load account managers:', e);
+      setAccountManagers(defaultAccountManagers);
+      setAccountManager(defaultAccountManagers[0]);
+    }
+  }, []);
+
+  // Save account managers to localStorage whenever they change
+  useEffect(() => {
+    if (accountManagers.length > 0) {
+      try {
+        localStorage.setItem('account-managers', JSON.stringify(accountManagers));
+      } catch (e) {
+        console.error('Failed to save account managers:', e);
+      }
+    }
+  }, [accountManagers]);
 
   // Load saved quotes from localStorage on mount
   useEffect(() => {
@@ -155,7 +218,21 @@ export default function PrintingQuoteTool() {
   // Get current device capacity
   const deviceCapacity = deviceTypes[selectedDevice]?.capacity || 80;
 
-  // PRODUCTION CALCULATIONS
+  // Auto-optimize number of printers based on job size
+  const optimizedNumPrinters = useMemo(() => {
+    const batchesNeeded = Math.ceil(quantity / deviceCapacity);
+    const hasGloss = glossFinish !== 'none';
+    const minutesPerBatch = hasGloss ? 45 : 35;
+    const totalPrintMinutes = batchesNeeded * minutesPerBatch * (sides === 'double' ? 2 : 1);
+    const productionHours = totalPrintMinutes / 60;
+    
+    // Auto-reduce printers for small jobs
+    if (productionHours < 2) return 1;
+    if (productionHours < 12) return Math.min(2, numPrinters);
+    return numPrinters;
+  }, [quantity, deviceCapacity, glossFinish, sides, numPrinters]);
+
+  // PRODUCTION CALCULATIONS (using optimized printer count)
   const batchesNeeded = Math.ceil(quantity / deviceCapacity);
   const hasGloss = glossFinish !== 'none';
   const minutesPerBatch = hasGloss ? 45 : 35;
@@ -164,9 +241,9 @@ export default function PrintingQuoteTool() {
   
   const hoursPerWorkday = 6;
   const batchesPerPrinterPerDay = Math.floor((hoursPerWorkday * 60) / minutesPerBatch);
-  const totalBatchesPerDay = batchesPerPrinterPerDay * numPrinters;
+  const totalBatchesPerDay = batchesPerPrinterPerDay * optimizedNumPrinters;
   const productionDays = Math.ceil(batchesNeeded / totalBatchesPerDay);
-  const effectiveProductionHours = productionHours / numPrinters;
+  const effectiveProductionHours = productionHours / optimizedNumPrinters;
 
   // PRICING CALCULATIONS
   const basePrice = useMemo(() => {
@@ -730,6 +807,9 @@ export default function PrintingQuoteTool() {
                     onChange={(e) => handlePrinterChange(e.target.value)}
                     className="w-32 px-3 py-2 border border-gray-300 rounded-lg"
                   />
+                  <p className="text-xs text-gray-500 mt-2">
+                    Auto-optimized to {optimizedNumPrinters} printer{optimizedNumPrinters !== 1 ? 's' : ''} for this order size
+                  </p>
                 </div>
                 <div className="bg-white rounded-lg p-3 border border-green-200">
                   <p className="text-sm text-gray-600 mb-2"><span className="font-semibold">Production Impact:</span></p>
@@ -1021,7 +1101,7 @@ export default function PrintingQuoteTool() {
                 <div className="text-sm text-blue-800">
                   <p>Base Price: ${basePrice.toFixed(2)} per unit</p>
                   {setupFee > 0 && <p>Setup Fee: ${setupFee.toFixed(2)}</p>}
-                  <p className="text-xs mt-2 text-blue-600">Production: {productionDays} day{productionDays !== 1 ? 's' : ''} • {batchesNeeded} batch{batchesNeeded !== 1 ? 'es' : ''} • {numPrinters} printer{numPrinters !== 1 ? 's' : ''}</p>
+                  <p className="text-xs mt-2 text-blue-600">Production: {productionDays} day{productionDays !== 1 ? 's' : ''} • {batchesNeeded} batch{batchesNeeded !== 1 ? 'es' : ''} • {deviceCapacity}/batch • {optimizedNumPrinters} printer{optimizedNumPrinters !== 1 ? 's' : ''}</p>
                 </div>
               </div>
 
@@ -1033,7 +1113,7 @@ export default function PrintingQuoteTool() {
                 <div className="space-y-2 text-sm text-gray-700">
                   <div className="flex justify-between"><span>Base ({quantity.toLocaleString()} × ${basePrice.toFixed(2)}):</span><span className="font-medium">${(basePrice * quantity).toFixed(2)}</span></div>
                   {setupFee > 0 && <div className="flex justify-between"><span>Setup Fee:</span><span className="font-medium">${setupFee.toFixed(2)}</span></div>}
-                  {glossCost > 0 && <div className="flex justify-between"><span>Gloss finish:</span><span className="font-medium">${glossCost.toFixed(2)}</span></div>}
+                  {glossCost > 0 && <div className="flex justify-between"><span>Gloss finish ({glossFinish === 'both-sides' ? 'both sides' : 'one side'}):</span><span className="font-medium">${glossCost.toFixed(2)}</span></div>}
                   {doubleSidedCost > 0 && <div className="flex justify-between"><span>Double-sided:</span><span className="font-medium">${doubleSidedCost.toFixed(2)}</span></div>}
                   {extraDesignCost > 0 && <div className="flex justify-between"><span>Extra designs:</span><span className="font-medium">${extraDesignCost.toFixed(2)}</span></div>}
                   {packagingCost > 0 && <div className="flex justify-between"><span>Packaging:</span><span className="font-medium">${packagingCost.toFixed(2)}</span></div>}
@@ -1173,7 +1253,7 @@ export default function PrintingQuoteTool() {
                       <p><span className="text-gray-600">Sides:</span> <span className="font-medium">{sides}</span></p>
                       <p><span className="text-gray-600">Gloss:</span> <span className="font-medium">{glossFinish}</span></p>
                       <p><span className="text-gray-600">Turnaround:</span> <span className="font-medium">{turnaround}</span></p>
-                      <p><span className="text-gray-600">Printers:</span> <span className="font-medium">{numPrinters}</span></p>
+                      <p><span className="text-gray-600">Printers:</span> <span className="font-medium">{optimizedNumPrinters} (of {numPrinters})</span></p>
                       <hr className="my-3" />
                       <p className="text-lg"><span className="text-gray-600">Total Quote:</span> <span className="font-bold text-green-600">${totalQuote.toFixed(2)}</span></p>
                       <p><span className="text-gray-600">Cost Floor:</span> <span className="font-medium">${costFloor.toFixed(2)}</span></p>
