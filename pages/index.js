@@ -887,6 +887,115 @@ export default function PrintingQuoteTool() {
                   </div>
                 )}
               </div>
+
+              {/* Shipping Section */}
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">Shipping</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    id="shopify"
+                    checked={shippingType === 'shopify'}
+                    onChange={() => setShippingType('shopify')}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="shopify" className="text-sm text-gray-700">Shopify calculated shipping</label>
+                </div>
+                {shippingType === 'shopify' && (
+                  <div className="ml-7 space-y-2">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Base Shopify quote ($)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100000"
+                        value={shopifyQuote}
+                        onChange={(e) => setShopifyQuote(Math.min(100000, Math.max(0, Number(e.target.value))))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Markup (%)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="100"
+                        value={shippingMarkup}
+                        onChange={(e) => setShippingMarkup(Math.min(100, Math.max(0, Number(e.target.value))))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    id="pickup"
+                    checked={shippingType === 'pickup'}
+                    onChange={() => setShippingType('pickup')}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="pickup" className="text-sm text-gray-700">Free local pickup (LA)</label>
+                </div>
+              </div>
+
+              {/* Sales Tax Section */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sales Tax Rate (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="20"
+                  value={salesTaxRate}
+                  onChange={(e) => setSalesTaxRate(Math.min(20, Math.max(0, Number(e.target.value))))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+
+              {/* Device Supply Section */}
+              <div className="space-y-3 pt-4 border-t">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="supply-devices"
+                    checked={supplyingDevices}
+                    onChange={(e) => setSupplyingDevices(e.target.checked)}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="supply-devices" className="text-sm font-medium text-gray-700">We are supplying devices</label>
+                </div>
+                {supplyingDevices && (
+                  <div className="ml-7 space-y-2">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Device cost per unit ($)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        value={deviceCost}
+                        onChange={(e) => setDeviceCost(Math.min(100, Math.max(0, Number(e.target.value))))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Markup (%)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="200"
+                        value={deviceMarkup}
+                        onChange={(e) => setDeviceMarkup(Math.min(200, Math.max(0, Number(e.target.value))))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Right Column - Calculations */}
@@ -914,9 +1023,12 @@ export default function PrintingQuoteTool() {
                   {doubleSidedCost > 0 && <div className="flex justify-between"><span>Double-sided:</span><span className="font-medium">${doubleSidedCost.toFixed(2)}</span></div>}
                   {extraDesignCost > 0 && <div className="flex justify-between"><span>Extra designs:</span><span className="font-medium">${extraDesignCost.toFixed(2)}</span></div>}
                   {packagingCost > 0 && <div className="flex justify-between"><span>Packaging:</span><span className="font-medium">${packagingCost.toFixed(2)}</span></div>}
+                  {deviceSupplyCost > 0 && <div className="flex justify-between"><span>Devices ({quantity.toLocaleString()} × ${(deviceCost * (1 + deviceMarkup / 100)).toFixed(2)}):</span><span className="font-medium">${deviceSupplyCost.toFixed(2)}</span></div>}
                   {turnaroundFee > 0 && <div className="flex justify-between"><span>Turnaround fee:</span><span className="font-medium">${turnaroundFee.toFixed(2)}</span></div>}
                   {sampleFee > 0 && <div className="flex justify-between"><span>Sample run:</span><span className="font-medium">${sampleFee.toFixed(2)}</span></div>}
                   <div className="border-t border-green-300 pt-2 flex justify-between font-semibold"><span>Subtotal:</span><span>${subtotal.toFixed(2)}</span></div>
+                  {salesTax > 0 && <div className="flex justify-between"><span>Sales Tax ({salesTaxRate}%):</span><span className="font-medium">${salesTax.toFixed(2)}</span></div>}
+                  {shippingCost > 0 && <div className="flex justify-between"><span>Shipping:</span><span className="font-medium">${shippingCost.toFixed(2)}</span></div>}
                   <div className="border-t-2 border-green-300 pt-2 flex justify-between text-base font-bold text-green-900"><span>Total Quote:</span><span>${totalQuote.toFixed(2)}</span></div>
                 </div>
               </div>
@@ -930,6 +1042,7 @@ export default function PrintingQuoteTool() {
                   <div className="flex justify-between"><span>Pre-Production:</span><span>${preProductionCost.toFixed(2)}</span></div>
                   <div className="flex justify-between"><span>Production ({effectiveProductionHours.toFixed(1)} hrs):</span><span>${productionCost.toFixed(2)}</span></div>
                   <div className="flex justify-between"><span>Post-Production:</span><span>${postProductionCost.toFixed(2)}</span></div>
+                  {deviceCostFloor > 0 && <div className="flex justify-between"><span>Device costs:</span><span>${deviceCostFloor.toFixed(2)}</span></div>}
                   <div className="border-t-2 border-red-300 pt-2 flex justify-between text-base font-bold text-red-900"><span>Total Cost Floor:</span><span>${costFloor.toFixed(2)}</span></div>
                 </div>
               </div>
