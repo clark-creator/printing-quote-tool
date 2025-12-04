@@ -8,6 +8,7 @@ export default function PrintingQuoteTool() {
   const [editingDevice, setEditingDevice] = useState(null);
   const [newDeviceName, setNewDeviceName] = useState('');
   const [newDeviceCapacity, setNewDeviceCapacity] = useState(80);
+  const [newDeviceUnitCost, setNewDeviceUnitCost] = useState(0);
 
   // Account manager management
   const [accountManagers, setAccountManagers] = useState([]);
@@ -60,9 +61,9 @@ export default function PrintingQuoteTool() {
 
   // Default values
   const defaultDeviceTypes = [
-    { name: '1mg Disposable', capacity: 88 },
-    { name: '2mg Disposable', capacity: 77 },
-    { name: 'MK Lighter', capacity: 80 }
+    { name: '1mg Disposable', capacity: 88, unitCost: 2.05 },
+    { name: '2mg Disposable', capacity: 77, unitCost: 2.50 },
+    { name: 'MK Lighter', capacity: 80, unitCost: 1.75 }
   ];
   const defaultAccountManagers = ['Ryan', 'Kyle', 'Anthony', 'Clarence'];
 
@@ -146,6 +147,14 @@ export default function PrintingQuoteTool() {
     }
   }, [savedQuotes]);
 
+  // Auto-populate device cost when "We are supplying devices" is checked or device type changes
+  useEffect(() => {
+    if (supplyingDevices && deviceTypes.length > 0) {
+      const currentDeviceUnitCost = deviceTypes[selectedDevice]?.unitCost || 0;
+      setDeviceCost(currentDeviceUnitCost);
+    }
+  }, [supplyingDevices, selectedDevice, deviceTypes]);
+
   // Minimum order quantity constant
   const MINIMUM_ORDER_QUANTITY = 100;
   const isBelowMinimum = quantity > 0 && quantity < MINIMUM_ORDER_QUANTITY;
@@ -178,15 +187,16 @@ export default function PrintingQuoteTool() {
 
   const addDeviceType = () => {
     if (newDeviceName.trim()) {
-      setDeviceTypes([...deviceTypes, { name: newDeviceName, capacity: newDeviceCapacity }]);
+      setDeviceTypes([...deviceTypes, { name: newDeviceName, capacity: newDeviceCapacity, unitCost: newDeviceUnitCost }]);
       setNewDeviceName('');
       setNewDeviceCapacity(80);
+      setNewDeviceUnitCost(0);
     }
   };
 
-  const updateDeviceType = (index, name, capacity) => {
+  const updateDeviceType = (index, name, capacity, unitCost) => {
     const updated = [...deviceTypes];
-    updated[index] = { name, capacity };
+    updated[index] = { name, capacity, unitCost };
     setDeviceTypes(updated);
     setEditingDevice(null);
   };
@@ -215,8 +225,9 @@ export default function PrintingQuoteTool() {
     }
   };
 
-  // Get current device capacity
+  // Get current device capacity and unit cost
   const deviceCapacity = deviceTypes[selectedDevice]?.capacity || 80;
+  const defaultDeviceCost = deviceTypes[selectedDevice]?.unitCost || 0;
 
   // Auto-optimize number of printers based on job size
   const optimizedNumPrinters = useMemo(() => {
@@ -858,14 +869,16 @@ export default function PrintingQuoteTool() {
                   <div key={index} className="flex items-center gap-2 p-2 bg-white rounded border">
                     {editingDevice === index ? (
                       <>
-                        <input type="text" value={device.name} onChange={(e) => { const updated = [...deviceTypes]; updated[index].name = e.target.value; setDeviceTypes(updated); }} className="flex-1 px-2 py-1 border rounded" />
-                        <input type="number" value={device.capacity} onChange={(e) => { const updated = [...deviceTypes]; updated[index].capacity = Number(e.target.value); setDeviceTypes(updated); }} className="w-20 px-2 py-1 border rounded" />
-                        <button onClick={() => updateDeviceType(index, device.name, device.capacity)} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700">Save</button>
+                        <input type="text" value={device.name} onChange={(e) => { const updated = [...deviceTypes]; updated[index].name = e.target.value; setDeviceTypes(updated); }} className="flex-1 px-2 py-1 border rounded" placeholder="Name" />
+                        <input type="number" value={device.capacity} onChange={(e) => { const updated = [...deviceTypes]; updated[index].capacity = Number(e.target.value); setDeviceTypes(updated); }} className="w-20 px-2 py-1 border rounded" placeholder="Capacity" />
+                        <input type="number" step="0.01" value={device.unitCost || 0} onChange={(e) => { const updated = [...deviceTypes]; updated[index].unitCost = Number(e.target.value); setDeviceTypes(updated); }} className="w-20 px-2 py-1 border rounded" placeholder="Cost" />
+                        <button onClick={() => updateDeviceType(index, device.name, device.capacity, device.unitCost || 0)} className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700">Save</button>
                       </>
                     ) : (
                       <>
                         <span className="flex-1 font-medium">{device.name}</span>
                         <span className="text-sm text-gray-600">{device.capacity}/batch</span>
+                        <span className="text-sm text-green-600">${(device.unitCost || 0).toFixed(2)}/unit</span>
                         <button onClick={() => setEditingDevice(index)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
                         <button onClick={() => deleteDeviceType(index)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
                       </>
@@ -874,10 +887,12 @@ export default function PrintingQuoteTool() {
                 ))}
               </div>
               <div className="flex gap-2">
-                <input type="text" placeholder="New device name" value={newDeviceName} onChange={(e) => setNewDeviceName(e.target.value)} className="flex-1 px-3 py-2 border rounded" />
-                <input type="number" placeholder="Capacity" value={newDeviceCapacity} onChange={(e) => setNewDeviceCapacity(Number(e.target.value))} className="w-24 px-3 py-2 border rounded" />
+                <input type="text" placeholder="Device name" value={newDeviceName} onChange={(e) => setNewDeviceName(e.target.value)} className="flex-1 px-3 py-2 border rounded" />
+                <input type="number" placeholder="Capacity" value={newDeviceCapacity} onChange={(e) => setNewDeviceCapacity(Number(e.target.value))} className="w-24 px-3 py-2 border rounded" title="Units per batch" />
+                <input type="number" step="0.01" placeholder="Cost ($)" value={newDeviceUnitCost} onChange={(e) => setNewDeviceUnitCost(Number(e.target.value))} className="w-24 px-3 py-2 border rounded" title="Cost per unit" />
                 <button onClick={addDeviceType} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"><Plus className="w-4 h-4" /> Add</button>
               </div>
+              <p className="text-xs text-gray-500 mt-2">Capacity = units per batch | Cost = your cost per device unit</p>
             </div>
           )}
 
