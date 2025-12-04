@@ -280,7 +280,10 @@ export default function PrintingQuoteTool() {
   }, [packaging, quantity]);
 
   const baseQuote = (basePrice * quantity) + setupFee + glossCost + doubleSidedCost + extraDesignCost + packagingCost;
-  const deviceSupplyCost = supplyingDevices ? deviceCost * quantity * (1 + deviceMarkup / 100) : 0;
+  
+  // Calculate device unit price rounded to 2 decimal places for display AND calculation consistency
+  const deviceUnitPrice = supplyingDevices ? Math.round(deviceCost * (1 + deviceMarkup / 100) * 100) / 100 : 0;
+  const deviceSupplyCost = supplyingDevices ? deviceUnitPrice * quantity : 0;
   const subtotalBeforeTurnaround = baseQuote + deviceSupplyCost;
 
   const turnaroundFee = useMemo(() => {
@@ -372,7 +375,7 @@ export default function PrintingQuoteTool() {
     if (doubleSidedCost > 0) lineItems.push({ desc: 'Double-sided Printing', amount: doubleSidedCost.toFixed(2) });
     if (extraDesignCost > 0) lineItems.push({ desc: `Extra Designs (${extraDesigns - designWaivers} × $35)`, amount: extraDesignCost.toFixed(2) });
     if (packagingCost > 0) lineItems.push({ desc: 'Packaging', amount: packagingCost.toFixed(2) });
-    if (supplyingDevices) lineItems.push({ desc: `Devices (${quantity.toLocaleString()} × ${(deviceCost * (1 + deviceMarkup / 100)).toFixed(2)})`, amount: deviceSupplyCost.toFixed(2) });
+    if (supplyingDevices) lineItems.push({ desc: `Devices (${quantity.toLocaleString()} × $${deviceUnitPrice.toFixed(2)})`, amount: deviceSupplyCost.toFixed(2) });
     if (turnaroundFee > 0) lineItems.push({ desc: `${turnaround === 'rush' ? 'Rush' : 'Weekend'} Turnaround Fee`, amount: turnaroundFee.toFixed(2) });
     if (sampleFee > 0) lineItems.push({ desc: `Sample Run${quantity >= 5000 ? ' (credited)' : ''}`, amount: sampleFee.toFixed(2) });
     
@@ -445,7 +448,6 @@ export default function PrintingQuoteTool() {
             <div><strong>Sides:</strong> ${sides === 'single' ? 'Single-sided' : 'Double-sided'}</div>
             <div><strong>Packaging:</strong> ${packaging === 'loose' ? 'Loose Bulk' : packaging === 'sticker-mania' ? 'Sticker Mania' : 'Client Packaging'}</div>
             <div><strong>Turnaround:</strong> ${turnaround === 'normal' ? 'Normal' : turnaround === 'rush' ? 'Rush' : 'Weekend'}</div>
-            <div><strong>Production:</strong> ${productionDays} day${productionDays !== 1 ? 's' : ''}</div>
           </div>
         </div>
         <table>
@@ -1115,12 +1117,13 @@ export default function PrintingQuoteTool() {
                   {setupFee > 0 && <div className="flex justify-between"><span>Setup Fee:</span><span className="font-medium">${setupFee.toFixed(2)}</span></div>}
                   {glossCost > 0 && <div className="flex justify-between"><span>Gloss finish ({glossFinish === 'both-sides' ? 'both sides' : 'one side'}):</span><span className="font-medium">${glossCost.toFixed(2)}</span></div>}
                   {doubleSidedCost > 0 && <div className="flex justify-between"><span>Double-sided:</span><span className="font-medium">${doubleSidedCost.toFixed(2)}</span></div>}
-                  {extraDesignCost > 0 && <div className="flex justify-between"><span>Extra designs:</span><span className="font-medium">${extraDesignCost.toFixed(2)}</span></div>}
+                  {extraDesignCost > 0 && <div className="flex justify-between"><span>Extra designs ({extraDesigns - designWaivers} × $35):</span><span className="font-medium">${extraDesignCost.toFixed(2)}</span></div>}
                   {packagingCost > 0 && <div className="flex justify-between"><span>Packaging:</span><span className="font-medium">${packagingCost.toFixed(2)}</span></div>}
-                  {deviceSupplyCost > 0 && <div className="flex justify-between"><span>Devices ({quantity.toLocaleString()} × ${(deviceCost * (1 + deviceMarkup / 100)).toFixed(2)}):</span><span className="font-medium">${deviceSupplyCost.toFixed(2)}</span></div>}
-                  {turnaroundFee > 0 && <div className="flex justify-between"><span>Turnaround fee:</span><span className="font-medium">${turnaroundFee.toFixed(2)}</span></div>}
-                  {sampleFee > 0 && <div className="flex justify-between"><span>Sample run:</span><span className="font-medium">${sampleFee.toFixed(2)}</span></div>}
+                  {deviceSupplyCost > 0 && <div className="flex justify-between"><span>Devices ({quantity.toLocaleString()} × ${deviceUnitPrice.toFixed(2)}):</span><span className="font-medium">${deviceSupplyCost.toFixed(2)}</span></div>}
+                  {turnaroundFee > 0 && <div className="flex justify-between"><span>Turnaround fee ({turnaround === 'rush' ? '12%' : '20%'}):</span><span className="font-medium">${turnaroundFee.toFixed(2)}</span></div>}
+                  {sampleFee > 0 && <div className="flex justify-between"><span>Sample run{quantity >= 5000 ? ' (credited)' : ''}:</span><span className="font-medium">${sampleFee.toFixed(2)}</span></div>}
                   <div className="border-t border-green-300 pt-2 flex justify-between font-semibold"><span>Subtotal:</span><span>${subtotal.toFixed(2)}</span></div>
+                  <div className="flex justify-between text-xs text-green-700 italic"><span>Per unit cost:</span><span>${(subtotal / quantity).toFixed(3)}/device</span></div>
                   {salesTax > 0 && <div className="flex justify-between"><span>Sales Tax ({salesTaxRate}%):</span><span className="font-medium">${salesTax.toFixed(2)}</span></div>}
                   {shippingCost > 0 && <div className="flex justify-between"><span>Shipping:</span><span className="font-medium">${shippingCost.toFixed(2)}</span></div>}
                   <div className="border-t-2 border-green-300 pt-2 flex justify-between text-base font-bold text-green-900"><span>Total Quote:</span><span>${totalQuote.toFixed(2)}</span></div>
@@ -1132,12 +1135,86 @@ export default function PrintingQuoteTool() {
                   <DollarSign className="w-5 h-5 text-red-600" />
                   <h3 className="font-semibold text-red-900">Cost Floor</h3>
                 </div>
-                <div className="space-y-2 text-sm text-gray-700">
-                  <div className="flex justify-between"><span>Pre-Production:</span><span>${preProductionCost.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>Production ({effectiveProductionHours.toFixed(1)} hrs):</span><span>${productionCost.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>Post-Production:</span><span>${postProductionCost.toFixed(2)}</span></div>
-                  {deviceCostFloor > 0 && <div className="flex justify-between"><span>Device costs:</span><span>${deviceCostFloor.toFixed(2)}</span></div>}
-                  <div className="border-t-2 border-red-300 pt-2 flex justify-between text-base font-bold text-red-900"><span>Total Cost Floor:</span><span>${costFloor.toFixed(2)}</span></div>
+                <div className="space-y-3 text-sm text-gray-700">
+                  {/* Pre-Production */}
+                  <div>
+                    <p className="font-semibold text-red-800 mb-1">Pre-Production:</p>
+                    <div className="ml-3 space-y-1">
+                      <div className="flex justify-between">
+                        <span>File setup ({numDesigns} design{numDesigns !== 1 ? 's' : ''}):</span>
+                        <span>${fileSetupCost.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Machine setup ({productionDays} day{productionDays !== 1 ? 's' : ''}):</span>
+                        <span>${machineSetupCost.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Sample printing:</span>
+                        <span>${samplePrintingCost.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-medium border-t pt-1">
+                        <span>Subtotal:</span>
+                        <span>${preProductionCost.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Production */}
+                  <div>
+                    <p className="font-semibold text-red-800 mb-1">Production:</p>
+                    <div className="ml-3 space-y-1">
+                      <div className="flex justify-between">
+                        <span>Ink - White-CMYK (3¢ × {numSidesPrinted} side{numSidesPrinted > 1 ? 's' : ''}):</span>
+                        <span>${baseCMYKInkCost.toFixed(2)}</span>
+                      </div>
+                      {glossInkCost > 0 && (
+                        <div className="flex justify-between">
+                          <span>Ink - Gloss ({glossFinish === 'both-sides' ? '1¢ × 2 sides' : '1¢ × 1 side'}):</span>
+                          <span>${glossInkCost.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span>Labor ({effectiveProductionHours.toFixed(1)}hrs @ $23/hr):</span>
+                        <span>${productionLaborCost.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-medium border-t pt-1">
+                        <span>Subtotal:</span>
+                        <span>${productionCost.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Post-Production */}
+                  <div>
+                    <p className="font-semibold text-red-800 mb-1">Post-Production:</p>
+                    <div className="ml-3 space-y-1">
+                      <div className="flex justify-between">
+                        <span>Repackaging:</span>
+                        <span>${repackagingCost.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Shipping/staging:</span>
+                        <span>${shippingStagingCost.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-medium border-t pt-1">
+                        <span>Subtotal:</span>
+                        <span>${postProductionCost.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Device Costs */}
+                  {supplyingDevices && (
+                    <div className="flex justify-between">
+                      <span>Device costs:</span>
+                      <span className="font-medium">${deviceCostFloor.toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="border-t-2 border-red-300 pt-2 flex justify-between text-base font-bold text-red-900">
+                    <span>Total Cost Floor:</span>
+                    <span>${costFloor.toFixed(2)}</span>
+                  </div>
                 </div>
               </div>
 
@@ -1147,8 +1224,42 @@ export default function PrintingQuoteTool() {
                   <h3 className="font-semibold text-purple-900">Profit Analysis</h3>
                 </div>
                 <div className="space-y-2 text-sm text-gray-700">
-                  <div className="flex justify-between text-base font-bold text-purple-900"><span>Gross Profit:</span><span>${profit.toFixed(2)}</span></div>
-                  <div className="flex justify-between text-base font-bold"><span>Profit Margin:</span><span className={profitMargin >= 30 ? 'text-green-600' : profitMargin >= 15 ? 'text-yellow-600' : 'text-red-600'}>{profitMargin.toFixed(1)}%</span></div>
+                  <div className="flex justify-between">
+                    <span>Total Quote:</span>
+                    <span className="font-medium">${totalQuote.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Total Costs:</span>
+                    <span className="font-medium">-${costFloor.toFixed(2)}</span>
+                  </div>
+                  <div className="border-t-2 border-purple-300 pt-2 space-y-2">
+                    <div className="flex justify-between text-base font-bold text-purple-900">
+                      <span>Gross Profit:</span>
+                      <span>${profit.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-base font-bold">
+                      <span>Profit Margin:</span>
+                      <span className={profitMargin >= 30 ? 'text-green-600' : profitMargin >= 15 ? 'text-yellow-600' : 'text-red-600'}>{profitMargin.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-2">Per Unit Analysis</h3>
+                <div className="space-y-1 text-sm text-gray-700">
+                  <div className="flex justify-between">
+                    <span>Cost per unit:</span>
+                    <span className="font-medium">${(costFloor / quantity).toFixed(3)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Price per unit:</span>
+                    <span className="font-medium">${(totalQuote / quantity).toFixed(3)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Profit per unit:</span>
+                    <span className="font-medium">${(profit / quantity).toFixed(3)}</span>
+                  </div>
                 </div>
               </div>
             </div>
