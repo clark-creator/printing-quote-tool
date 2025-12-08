@@ -4,12 +4,15 @@
  */
 
 // Pricing tiers based on total quantity
+// Updated December 2024 with new tiered pricing strategy
 export const PRICING_TIERS = [
-  { minQty: 10000, price: 0.66 },
-  { minQty: 3000, price: 0.84 },
-  { minQty: 1000, price: 0.65 },
-  { minQty: 500, price: 1.10 },
-  { minQty: 0, price: 0.75 }
+  { minQty: 10000, price: 0.60 },  // 10,000-24,999: $0.60/device
+  { minQty: 5000, price: 0.60 },   // 5,000-9,999: $0.60/device
+  { minQty: 3000, price: 0.65 },   // 3,000-4,999: $0.65/device
+  { minQty: 1000, price: 0.70 },   // 1,000-2,999: $0.70/device
+  { minQty: 500, price: 0.75 },    // 500-999: $0.75/device + setup fee
+  { minQty: 100, price: 0.80 },    // 100-499: $0.80/device + setup fee
+  { minQty: 0, price: 0.80 }       // Below minimum (fallback)
 ];
 
 // Add-on costs per unit
@@ -67,11 +70,13 @@ export function getBasePrice(totalQuantity) {
  * @returns {string} Tier description
  */
 export function getPricingTierName(totalQuantity) {
-  if (totalQuantity >= 10000) return '10,000+ units';
-  if (totalQuantity >= 3000) return '3,000-9,999 units';
+  if (totalQuantity >= 10000) return '10,000-24,999 units';
+  if (totalQuantity >= 5000) return '5,000-9,999 units';
+  if (totalQuantity >= 3000) return '3,000-4,999 units';
   if (totalQuantity >= 1000) return '1,000-2,999 units';
   if (totalQuantity >= 500) return '500-999 units';
-  return 'Under 500 units';
+  if (totalQuantity >= 100) return '100-499 units';
+  return 'Below minimum (100 units)';
 }
 
 /**
