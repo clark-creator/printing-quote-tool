@@ -1,17 +1,18 @@
 import React from 'react';
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, DollarSign } from 'lucide-react';
 import { useQuote } from '../../context/QuoteContext';
 
 /**
  * Profit Analysis component
- * Displays profit metrics and per-unit analysis
+ * Displays profit metrics, per-unit analysis, and account manager commission
  */
 export function ProfitAnalysis() {
   const {
     quoteBreakdown,
     costFloorBreakdown,
     profitAnalysis,
-    totalQuantity
+    totalQuantity,
+    accountManager
   } = useQuote();
 
   const { totalQuote } = quoteBreakdown;
@@ -24,6 +25,10 @@ export function ProfitAnalysis() {
     pricePerUnit,
     profitPerUnit
   } = profitAnalysis;
+
+  // Commission calculation (10% of gross profit)
+  const commissionRate = 0.10;
+  const estimatedCommission = grossProfit > 0 ? grossProfit * commissionRate : 0;
 
   // Color classes based on margin status
   const marginColorClass = {
@@ -85,6 +90,41 @@ export function ProfitAnalysis() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Account Manager Commission */}
+      <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <DollarSign className="w-5 h-5 text-blue-600" />
+          <h3 className="font-semibold text-blue-900">Estimated Commission</h3>
+        </div>
+
+        <div className="space-y-2 text-sm text-gray-700">
+          <div className="flex justify-between items-center">
+            <span>Account Manager:</span>
+            <span className="font-medium text-blue-800">
+              {accountManager || 'Not selected'}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>Commission Rate:</span>
+            <span className="font-medium">10% of gross profit</span>
+          </div>
+          <div className="border-t-2 border-blue-300 pt-2">
+            <div className="flex justify-between text-base font-bold text-blue-900">
+              <span>Estimated Commission:</span>
+              <span className={estimatedCommission > 0 ? 'text-blue-700' : 'text-gray-400'}>
+                ${estimatedCommission.toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {grossProfit <= 0 && (
+          <div className="mt-2 text-xs text-blue-600 bg-blue-100 px-2 py-1 rounded">
+            Commission requires positive gross profit
+          </div>
+        )}
       </div>
 
       {/* Per Unit Analysis */}
