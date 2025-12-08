@@ -22,7 +22,7 @@ export const ADDONS = {
     'single-side': 0.07,
     'both-sides': 0.12
   },
-  doubleSided: 0.31,
+  doubleSided: 0.35,
   packaging: {
     loose: 0,
     'sticker-mania': 0.11,
