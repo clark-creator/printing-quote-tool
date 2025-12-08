@@ -7,7 +7,7 @@
 export const PRICING_TIERS = [
   { minQty: 10000, price: 0.66 },
   { minQty: 3000, price: 0.84 },
-  { minQty: 1000, price: 1.05 },
+  { minQty: 1000, price: 0.65 },
   { minQty: 500, price: 1.10 },
   { minQty: 0, price: 0.75 }
 ];
