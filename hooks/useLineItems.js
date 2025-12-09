@@ -1,6 +1,13 @@
 import { useState, useMemo, useCallback } from 'react';
-import { calculateLineItemProduction, calculateInkCosts, calculateRepackagingCost, calculateDeviceCostFloor } from '../utils/costCalculations';
-import { getBasePrice, getGlossCost, getDoubleSidedCost, getPackagingCost, calculateDeviceSupplyCost } from '../utils/pricing';
+import { calculateLineItemProduction, calculateInkCosts, calculateRepackagingCost } from '../utils/costCalculations';
+import { 
+  getBasePrice, 
+  getGlossCost, 
+  getDoubleSidedCost, 
+  getPackagingCost, 
+  calculateDeviceCosts,
+  SERVICE_TYPES 
+} from '../utils/pricing';
 
 /**
  * Creates a new empty line item
@@ -13,12 +20,12 @@ export function createLineItem(deviceIndex = 0) {
     deviceIndex,
     quantity: 1000,
     quantityInput: '1000',
+    // Service type: 'print-only', 'print-and-devices', or 'devices-only'
+    serviceType: SERVICE_TYPES.PRINT_ONLY,
+    // Printing options (only apply when serviceType includes printing)
     sides: 'single',
     glossFinish: 'none',
-    packaging: 'loose',
-    supplyingDevices: false,
-    deviceCost: 0,
-    deviceMarkup: 30
+    packaging: 'loose'
   };
 }
 
@@ -71,24 +78,21 @@ export function useLineItems(deviceTypes) {
         }
       }
       
-      // Auto-populate device cost when supplyingDevices is enabled
-      if (field === 'supplyingDevices' && value && deviceTypes.length > 0) {
-        updated.deviceCost = deviceTypes[item.deviceIndex]?.unitCost || 0;
-      }
-      
-      // Update device cost when device type changes (if supplying)
-      if (field === 'deviceIndex' && item.supplyingDevices && deviceTypes.length > 0) {
-        updated.deviceCost = deviceTypes[value]?.unitCost || 0;
-      }
-      
       // Handle gloss/sides interaction
       if (field === 'sides' && value === 'single' && item.glossFinish === 'both-sides') {
         updated.glossFinish = 'single-side';
       }
       
+      // When switching to devices-only, reset printing options
+      if (field === 'serviceType' && value === SERVICE_TYPES.DEVICES_ONLY) {
+        updated.sides = 'single';
+        updated.glossFinish = 'none';
+        updated.packaging = 'loose';
+      }
+      
       return updated;
     }));
-  }, [deviceTypes]);
+  }, []);
 
   /**
    * Set all line items (used when loading quotes)
@@ -100,12 +104,11 @@ export function useLineItems(deviceTypes) {
       deviceIndex: item.deviceIndex || 0,
       quantity: item.quantity || 1000,
       quantityInput: (item.quantity || 1000).toString(),
+      // Handle legacy quotes that don't have serviceType
+      serviceType: item.serviceType || (item.supplyingDevices ? SERVICE_TYPES.PRINT_AND_DEVICES : SERVICE_TYPES.PRINT_ONLY),
       sides: item.sides || 'single',
       glossFinish: item.glossFinish || 'none',
-      packaging: item.packaging || 'loose',
-      supplyingDevices: item.supplyingDevices || false,
-      deviceCost: item.deviceCost || 0,
-      deviceMarkup: item.deviceMarkup || 30
+      packaging: item.packaging || 'loose'
     })));
   }, []);
 
@@ -121,50 +124,86 @@ export function useLineItems(deviceTypes) {
     return lineItems.reduce((sum, item) => sum + item.quantity, 0);
   }, [lineItems]);
 
+  // Calculate print-only quantity (for pricing tier and design calculations)
+  const printQuantity = useMemo(() => {
+    return lineItems
+      .filter(item => item.serviceType !== SERVICE_TYPES.DEVICES_ONLY)
+      .reduce((sum, item) => sum + item.quantity, 0);
+  }, [lineItems]);
+
   // Calculate per-line-item production and cost values
   const lineItemCalculations = useMemo(() => {
     return lineItems.map(item => {
-      const device = deviceTypes[item.deviceIndex] || { capacity: 80, unitCost: 0, name: 'Unknown' };
-      const hasGloss = item.glossFinish !== 'none';
-      const isDoubleSided = item.sides === 'double';
+      const device = deviceTypes[item.deviceIndex] || { 
+        capacity: 80, 
+        unitCost: 0, 
+        name: 'Unknown',
+        pricingTiers: []
+      };
+      
+      const includesPrinting = item.serviceType !== SERVICE_TYPES.DEVICES_ONLY;
+      const includesDevices = item.serviceType !== SERVICE_TYPES.PRINT_ONLY;
+      
+      const hasGloss = includesPrinting && item.glossFinish !== 'none';
+      const isDoubleSided = includesPrinting && item.sides === 'double';
       const numSides = isDoubleSided ? 2 : 1;
       
-      // Production calculations
-      const production = calculateLineItemProduction({
-        quantity: item.quantity,
-        deviceCapacity: device.capacity,
-        hasGloss,
-        isDoubleSided
-      });
+      // Production calculations (only for printing)
+      let production = {
+        batchesNeeded: 0,
+        minutesPerBatch: 0,
+        totalPrintMinutes: 0,
+        productionHours: 0
+      };
       
-      // Ink costs (for cost floor)
-      const inkCosts = calculateInkCosts({
-        quantity: item.quantity,
-        numSides,
-        glossFinish: item.glossFinish
-      });
+      if (includesPrinting) {
+        production = calculateLineItemProduction({
+          quantity: item.quantity,
+          deviceCapacity: device.capacity,
+          hasGloss,
+          isDoubleSided
+        });
+      }
       
-      // Repackaging cost (for cost floor)
-      const repackaging = calculateRepackagingCost(item.packaging, item.quantity);
+      // Ink costs (for cost floor - only for printing)
+      let inkCosts = {
+        cmykCostPerUnit: 0,
+        cmykInkCost: 0,
+        glossCostPerUnit: 0,
+        glossInkCost: 0,
+        totalInkCost: 0
+      };
       
-      // Device costs
-      const { deviceUnitPrice, deviceSupplyCost } = calculateDeviceSupplyCost(
-        item.supplyingDevices,
-        item.deviceCost,
-        item.deviceMarkup,
-        item.quantity
-      );
+      if (includesPrinting) {
+        inkCosts = calculateInkCosts({
+          quantity: item.quantity,
+          numSides,
+          glossFinish: item.glossFinish
+        });
+      }
       
-      const deviceCostFloor = calculateDeviceCostFloor(
-        item.supplyingDevices,
-        item.deviceCost,
-        item.quantity
+      // Repackaging cost (for cost floor - only for printing)
+      let repackaging = { repackagingCostPerUnit: 0, repackagingCost: 0 };
+      if (includesPrinting) {
+        repackaging = calculateRepackagingCost(item.packaging, item.quantity);
+      }
+      
+      // Device costs (for devices-only and print+devices)
+      const deviceCosts = calculateDeviceCosts(
+        item.serviceType,
+        item.quantity,
+        device.unitCost,
+        device.pricingTiers
       );
       
       return {
         ...item,
         deviceName: device.name,
         deviceCapacity: device.capacity,
+        deviceUnitCost: device.unitCost,
+        devicePricingTiers: device.pricingTiers,
+        includesPrinting,
+        includesDevices,
         hasGloss,
         isDoubleSided,
         numSides,
@@ -180,24 +219,35 @@ export function useLineItems(deviceTypes) {
         repackagingCostPerUnit: repackaging.repackagingCostPerUnit,
         repackagingCost: repackaging.repackagingCost,
         // Devices
-        deviceUnitPrice,
-        deviceSupplyCost,
-        deviceCostFloor
+        deviceSellingPrice: deviceCosts.deviceSellingPrice,
+        deviceRevenue: deviceCosts.deviceRevenue,
+        deviceCostFloor: deviceCosts.deviceCostFloor,
+        deviceProfit: deviceCosts.deviceProfit
       };
     });
   }, [lineItems, deviceTypes]);
 
-  // Calculate pricing per line item (using total quantity for tier)
+  // Calculate pricing per line item (using print quantity for tier)
   const lineItemPricing = useMemo(() => {
-    const basePrice = getBasePrice(totalQuantity);
+    const basePrice = getBasePrice(printQuantity);
     
     return lineItemCalculations.map(item => {
-      const basePrintingCost = basePrice * item.quantity;
-      const glossCost = getGlossCost(item.glossFinish, item.quantity);
-      const doubleSidedCost = getDoubleSidedCost(item.sides, item.quantity);
-      const packagingCost = getPackagingCost(item.packaging, item.quantity);
+      // Printing costs (only if includes printing)
+      let basePrintingCost = 0;
+      let glossCost = 0;
+      let doubleSidedCost = 0;
+      let packagingCost = 0;
       
-      const lineItemSubtotal = basePrintingCost + glossCost + doubleSidedCost + packagingCost + item.deviceSupplyCost;
+      if (item.includesPrinting) {
+        basePrintingCost = basePrice * item.quantity;
+        glossCost = getGlossCost(item.glossFinish, item.quantity);
+        doubleSidedCost = getDoubleSidedCost(item.sides, item.quantity);
+        packagingCost = getPackagingCost(item.packaging, item.quantity);
+      }
+      
+      // Total for this line item
+      const printingSubtotal = basePrintingCost + glossCost + doubleSidedCost + packagingCost;
+      const lineItemSubtotal = printingSubtotal + item.deviceRevenue;
       
       return {
         ...item,
@@ -205,26 +255,33 @@ export function useLineItems(deviceTypes) {
         glossCost,
         doubleSidedCost,
         packagingCost,
+        printingSubtotal,
         lineItemSubtotal
       };
     });
-  }, [lineItemCalculations, totalQuantity]);
+  }, [lineItemCalculations, printQuantity]);
 
   // Aggregate totals across all line items
   const lineItemTotals = useMemo(() => {
     return lineItemPricing.reduce((totals, item) => ({
+      // Printing costs
       basePrintingCost: totals.basePrintingCost + item.basePrintingCost,
       glossCost: totals.glossCost + item.glossCost,
       doubleSidedCost: totals.doubleSidedCost + item.doubleSidedCost,
       packagingCost: totals.packagingCost + item.packagingCost,
-      deviceSupplyCost: totals.deviceSupplyCost + item.deviceSupplyCost,
+      printingSubtotal: totals.printingSubtotal + item.printingSubtotal,
+      
+      // Device revenue
+      deviceRevenue: totals.deviceRevenue + item.deviceRevenue,
+      
       // Cost floor items
       cmykInkCost: totals.cmykInkCost + item.cmykInkCost,
       glossInkCost: totals.glossInkCost + item.glossInkCost,
       totalInkCost: totals.totalInkCost + item.totalInkCost,
       repackagingCost: totals.repackagingCost + item.repackagingCost,
       deviceCostFloor: totals.deviceCostFloor + item.deviceCostFloor,
-      // Production
+      
+      // Production (only for print items)
       totalBatches: totals.totalBatches + item.batchesNeeded,
       totalProductionHours: totals.totalProductionHours + item.productionHours,
       totalPrintMinutes: totals.totalPrintMinutes + item.totalPrintMinutes
@@ -233,7 +290,8 @@ export function useLineItems(deviceTypes) {
       glossCost: 0,
       doubleSidedCost: 0,
       packagingCost: 0,
-      deviceSupplyCost: 0,
+      printingSubtotal: 0,
+      deviceRevenue: 0,
       cmykInkCost: 0,
       glossInkCost: 0,
       totalInkCost: 0,
@@ -248,10 +306,22 @@ export function useLineItems(deviceTypes) {
   // Calculate average minutes per batch (for production day calculation)
   const avgMinutesPerBatch = useMemo(() => {
     if (lineItemTotals.totalBatches === 0) return 35;
-    return lineItemPricing.reduce((sum, item) => {
-      return sum + (item.minutesPerBatch * item.batchesNeeded);
-    }, 0) / lineItemTotals.totalBatches;
+    return lineItemPricing
+      .filter(item => item.includesPrinting)
+      .reduce((sum, item) => {
+        return sum + (item.minutesPerBatch * item.batchesNeeded);
+      }, 0) / lineItemTotals.totalBatches;
   }, [lineItemPricing, lineItemTotals.totalBatches]);
+
+  // Check if order has any printing
+  const hasPrinting = useMemo(() => {
+    return lineItems.some(item => item.serviceType !== SERVICE_TYPES.DEVICES_ONLY);
+  }, [lineItems]);
+
+  // Check if order has any devices
+  const hasDevices = useMemo(() => {
+    return lineItems.some(item => item.serviceType !== SERVICE_TYPES.PRINT_ONLY);
+  }, [lineItems]);
 
   return {
     // State
@@ -266,9 +336,12 @@ export function useLineItems(deviceTypes) {
     
     // Calculated values
     totalQuantity,
+    printQuantity,
     lineItemCalculations,
     lineItemPricing,
     lineItemTotals,
-    avgMinutesPerBatch
+    avgMinutesPerBatch,
+    hasPrinting,
+    hasDevices
   };
 }

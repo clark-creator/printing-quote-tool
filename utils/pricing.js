@@ -1,9 +1,15 @@
 /**
  * Pricing utilities for the quote calculator
  * Contains pricing tiers, fee calculations, and add-on costs
+ * 
+ * Updated: Device pricing tiers for dealer/supply mode
  */
 
-// Pricing tiers based on total quantity
+// ===========================================
+// PRINTING PRICING TIERS
+// ===========================================
+
+// Printing pricing tiers based on total quantity
 // Updated December 2024 with new tiered pricing strategy
 export const PRICING_TIERS = [
   { minQty: 10000, price: 0.60 },  // 10,000-24,999: $0.60/device
@@ -15,7 +21,70 @@ export const PRICING_TIERS = [
   { minQty: 0, price: 0.80 }       // Below minimum (fallback)
 ];
 
-// Add-on costs per unit
+// ===========================================
+// DEVICE PRICING TIERS (for device supply)
+// ===========================================
+
+// Default device pricing tiers - selling prices based on quantity
+// These are the prices we CHARGE customers, not our cost
+export const DEFAULT_DEVICE_PRICING_TIERS = {
+  '1mg Disposable': [
+    { minQty: 10000, price: 2.50 },
+    { minQty: 5000, price: 2.75 },
+    { minQty: 3000, price: 3.00 },
+    { minQty: 1000, price: 3.25 },
+    { minQty: 100, price: 3.75 },
+    { minQty: 0, price: 3.75 }
+  ],
+  '2mg Disposable': [
+    { minQty: 10000, price: 2.70 },
+    { minQty: 5000, price: 2.95 },
+    { minQty: 3000, price: 3.20 },
+    { minQty: 1000, price: 3.45 },
+    { minQty: 100, price: 3.95 },
+    { minQty: 0, price: 3.95 }
+  ],
+  'MK Lighter': [
+    { minQty: 10000, price: 2.25 },
+    { minQty: 5000, price: 2.40 },
+    { minQty: 3000, price: 2.55 },
+    { minQty: 1000, price: 2.75 },
+    { minQty: 100, price: 3.00 },
+    { minQty: 0, price: 3.00 }
+  ]
+};
+
+// Default pricing tiers for new devices (percentage markup based)
+export const DEFAULT_NEW_DEVICE_TIERS = [
+  { minQty: 10000, markupPercent: 22 },
+  { minQty: 5000, markupPercent: 25 },
+  { minQty: 3000, markupPercent: 30 },
+  { minQty: 1000, markupPercent: 35 },
+  { minQty: 100, markupPercent: 40 },
+  { minQty: 0, markupPercent: 40 }
+];
+
+// ===========================================
+// SERVICE TYPES
+// ===========================================
+
+export const SERVICE_TYPES = {
+  PRINT_ONLY: 'print-only',
+  PRINT_AND_DEVICES: 'print-and-devices',
+  DEVICES_ONLY: 'devices-only'
+};
+
+export const SERVICE_TYPE_LABELS = {
+  [SERVICE_TYPES.PRINT_ONLY]: 'Print Only (client supplies devices)',
+  [SERVICE_TYPES.PRINT_AND_DEVICES]: 'Print + Devices (we supply & print)',
+  [SERVICE_TYPES.DEVICES_ONLY]: 'Devices Only (no printing)'
+};
+
+// ===========================================
+// ADD-ON COSTS
+// ===========================================
+
+// Add-on costs per unit (only apply to printing)
 export const ADDONS = {
   gloss: {
     none: 0,
@@ -50,9 +119,13 @@ export const TURNAROUND = {
 // Minimum order
 export const MINIMUM_ORDER_QUANTITY = 100;
 
+// ===========================================
+// PRINTING PRICE FUNCTIONS
+// ===========================================
+
 /**
- * Get base price per unit based on total quantity
- * @param {number} totalQuantity - Total units across all line items
+ * Get base printing price per unit based on total quantity
+ * @param {number} totalQuantity - Total units across all PRINTING line items
  * @returns {number} Price per unit
  */
 export function getBasePrice(totalQuantity) {
@@ -79,24 +152,113 @@ export function getPricingTierName(totalQuantity) {
   return 'Below minimum (100 units)';
 }
 
+// ===========================================
+// DEVICE PRICE FUNCTIONS
+// ===========================================
+
+/**
+ * Get device selling price based on quantity and device pricing tiers
+ * @param {number} quantity - Quantity for THIS line item
+ * @param {Array} pricingTiers - Array of {minQty, price} objects
+ * @returns {number} Selling price per device
+ */
+export function getDeviceSellingPrice(quantity, pricingTiers) {
+  if (!pricingTiers || !Array.isArray(pricingTiers) || pricingTiers.length === 0) {
+    return 0;
+  }
+  
+  // Sort tiers by minQty descending to find the right tier
+  const sortedTiers = [...pricingTiers].sort((a, b) => b.minQty - a.minQty);
+  
+  for (const tier of sortedTiers) {
+    if (quantity >= tier.minQty) {
+      return tier.price;
+    }
+  }
+  
+  // Fallback to last tier (lowest quantity)
+  return sortedTiers[sortedTiers.length - 1].price;
+}
+
+/**
+ * Generate pricing tiers for a new device based on cost and markup percentages
+ * @param {number} baseCost - Your cost per device
+ * @returns {Array} Array of {minQty, price} objects
+ */
+export function generateDevicePricingTiers(baseCost) {
+  return DEFAULT_NEW_DEVICE_TIERS.map(tier => ({
+    minQty: tier.minQty,
+    price: Math.round(baseCost * (1 + tier.markupPercent / 100) * 100) / 100
+  }));
+}
+
+/**
+ * Calculate device costs for a line item
+ * @param {string} serviceType - 'print-only', 'print-and-devices', or 'devices-only'
+ * @param {number} quantity - Quantity for this line item
+ * @param {number} deviceCost - Your cost per device
+ * @param {Array} pricingTiers - Device pricing tiers
+ * @returns {Object} { deviceSellingPrice, deviceRevenue, deviceCostFloor, deviceProfit }
+ */
+export function calculateDeviceCosts(serviceType, quantity, deviceCost, pricingTiers) {
+  // If print-only, no device costs
+  if (serviceType === SERVICE_TYPES.PRINT_ONLY) {
+    return {
+      deviceSellingPrice: 0,
+      deviceRevenue: 0,
+      deviceCostFloor: 0,
+      deviceProfit: 0
+    };
+  }
+  
+  const deviceSellingPrice = getDeviceSellingPrice(quantity, pricingTiers);
+  const deviceRevenue = deviceSellingPrice * quantity;
+  const deviceCostFloor = deviceCost * quantity;
+  const deviceProfit = deviceRevenue - deviceCostFloor;
+  
+  return {
+    deviceSellingPrice,
+    deviceRevenue,
+    deviceCostFloor,
+    deviceProfit
+  };
+}
+
+// ===========================================
+// FEE CALCULATION FUNCTIONS
+// ===========================================
+
 /**
  * Calculate setup fee based on quantity
- * @param {number} totalQuantity 
+ * Only applies to orders with printing
+ * @param {number} printQuantity - Total units that require printing
  * @returns {number} Setup fee amount
  */
-export function getSetupFee(totalQuantity) {
-  return totalQuantity < FEES.setupFeeThreshold ? FEES.setupFee : 0;
+export function getSetupFee(printQuantity) {
+  if (printQuantity === 0) return 0; // No printing, no setup fee
+  return printQuantity < FEES.setupFeeThreshold ? FEES.setupFee : 0;
 }
 
 /**
  * Calculate included designs and extra design costs
- * @param {number} totalQuantity - Total units across all line items
+ * Only applies to orders with printing
+ * @param {number} printQuantity - Total units that require printing
  * @param {number} numDesigns - Number of designs requested
  * @param {number} designWaivers - Number of extra designs to waive fee for
  * @returns {Object} { includedDesigns, extraDesigns, chargeableDesigns, extraDesignCost }
  */
-export function calculateDesignCosts(totalQuantity, numDesigns, designWaivers = 0) {
-  const includedDesigns = Math.floor(totalQuantity / 1000) * FEES.designsPerThousand;
+export function calculateDesignCosts(printQuantity, numDesigns, designWaivers = 0) {
+  if (printQuantity === 0) {
+    return {
+      includedDesigns: 0,
+      extraDesigns: 0,
+      waivedDesigns: 0,
+      chargeableDesigns: 0,
+      extraDesignCost: 0
+    };
+  }
+  
+  const includedDesigns = Math.floor(printQuantity / 1000) * FEES.designsPerThousand;
   const extraDesigns = Math.max(0, numDesigns - includedDesigns);
   const waivedDesigns = Math.min(designWaivers, extraDesigns);
   const chargeableDesigns = extraDesigns - waivedDesigns;
@@ -113,15 +275,17 @@ export function calculateDesignCosts(totalQuantity, numDesigns, designWaivers = 
 
 /**
  * Calculate sample fee
+ * Only applies to orders with printing
  * @param {boolean} sampleRun - Whether sample run is requested
  * @param {boolean} waiveSampleFee - Whether to waive the fee
- * @param {number} totalQuantity - Total units
+ * @param {number} printQuantity - Total units that require printing
  * @returns {number} Sample fee amount
  */
-export function getSampleFee(sampleRun, waiveSampleFee, totalQuantity) {
+export function getSampleFee(sampleRun, waiveSampleFee, printQuantity) {
   if (!sampleRun) return 0;
+  if (printQuantity === 0) return 0; // No printing, no sample
   if (waiveSampleFee) return 0;
-  if (totalQuantity >= FEES.sampleRunFreeThreshold) return 0;
+  if (printQuantity >= FEES.sampleRunFreeThreshold) return 0;
   return FEES.sampleRunFee;
 }
 
@@ -135,6 +299,10 @@ export function getTurnaroundFee(turnaround, subtotal) {
   const multiplier = TURNAROUND[turnaround] || 0;
   return subtotal * multiplier;
 }
+
+// ===========================================
+// PRINTING ADD-ON FUNCTIONS
+// ===========================================
 
 /**
  * Calculate gloss cost for a line item
@@ -169,26 +337,6 @@ export function getPackagingCost(packaging, quantity) {
 }
 
 /**
- * Calculate device supply cost with markup
- * @param {boolean} supplyingDevices - Whether we're supplying devices
- * @param {number} deviceCost - Raw cost per device
- * @param {number} deviceMarkup - Markup percentage
- * @param {number} quantity - Quantity for this line item
- * @returns {Object} { deviceUnitPrice, deviceSupplyCost }
- */
-export function calculateDeviceSupplyCost(supplyingDevices, deviceCost, deviceMarkup, quantity) {
-  if (!supplyingDevices) {
-    return { deviceUnitPrice: 0, deviceSupplyCost: 0 };
-  }
-  
-  // Round to 2 decimal places for consistency between display and calculation
-  const deviceUnitPrice = Math.round(deviceCost * (1 + deviceMarkup / 100) * 100) / 100;
-  const deviceSupplyCost = deviceUnitPrice * quantity;
-  
-  return { deviceUnitPrice, deviceSupplyCost };
-}
-
-/**
  * Calculate shipping cost with markup
  * @param {string} shippingType - 'shopify' or 'pickup'
  * @param {number} shopifyQuote - Base shipping quote
@@ -208,4 +356,23 @@ export function calculateShippingCost(shippingType, shopifyQuote, shippingMarkup
  */
 export function calculateSalesTax(subtotal, taxRate) {
   return subtotal * (taxRate / 100);
+}
+
+// ===========================================
+// LEGACY SUPPORT (for backwards compatibility)
+// ===========================================
+
+/**
+ * @deprecated Use calculateDeviceCosts instead
+ * Calculate device supply cost with markup (legacy method)
+ */
+export function calculateDeviceSupplyCost(supplyingDevices, deviceCost, deviceMarkup, quantity) {
+  if (!supplyingDevices) {
+    return { deviceUnitPrice: 0, deviceSupplyCost: 0 };
+  }
+  
+  const deviceUnitPrice = Math.round(deviceCost * (1 + deviceMarkup / 100) * 100) / 100;
+  const deviceSupplyCost = deviceUnitPrice * quantity;
+  
+  return { deviceUnitPrice, deviceSupplyCost };
 }

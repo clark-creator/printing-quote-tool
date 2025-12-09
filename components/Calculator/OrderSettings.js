@@ -4,6 +4,7 @@ import { useQuote } from '../../context/QuoteContext';
 /**
  * Order Settings component
  * Handles order-level settings: designs, turnaround, sample run, shipping, tax
+ * Conditionally shows printing-related options based on order content
  */
 export function OrderSettings() {
   const {
@@ -30,50 +31,95 @@ export function OrderSettings() {
     setSalesTaxRate,
     
     // Calculated values
-    designCosts
+    designCosts,
+    hasPrinting
   } = useQuote();
 
   return (
     <div className="border-t pt-4 space-y-4">
       <h3 className="text-lg font-semibold text-gray-800">Order Settings</h3>
 
-      {/* Number of Designs */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Number of SKUs/Designs
-        </label>
-        <input
-          type="number"
-          min="1"
-          max="1000"
-          value={numDesigns}
-          onChange={(e) => setNumDesigns(Math.min(1000, Math.max(1, Number(e.target.value) || 1)))}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-        />
-        <p className="text-sm text-gray-500 mt-1">
-          {designCosts.includedDesigns} design{designCosts.includedDesigns !== 1 ? 's' : ''} included (1 per 1,000 units)
-          {designCosts.extraDesigns > 0 && ` • ${designCosts.extraDesigns} extra @ $35 each`}
-        </p>
-      </div>
+      {/* Printing-specific settings - only show if order has printing */}
+      {hasPrinting && (
+        <>
+          {/* Number of Designs */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Number of SKUs/Designs
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="1000"
+              value={numDesigns}
+              onChange={(e) => setNumDesigns(Math.min(1000, Math.max(1, Number(e.target.value) || 1)))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            />
+            <p className="text-sm text-gray-500 mt-1">
+              {designCosts.includedDesigns} design{designCosts.includedDesigns !== 1 ? 's' : ''} included (1 per 1,000 units)
+              {designCosts.extraDesigns > 0 && ` • ${designCosts.extraDesigns} extra @ $35 each`}
+            </p>
+          </div>
 
-      {/* Design Waivers */}
-      {designCosts.extraDesigns > 0 && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Number of extra designs to waive fee for
-          </label>
-          <input
-            type="number"
-            min="0"
-            max={designCosts.extraDesigns}
-            value={designWaivers}
-            onChange={(e) => setDesignWaivers(Math.min(Number(e.target.value), designCosts.extraDesigns))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          />
+          {/* Design Waivers */}
+          {designCosts.extraDesigns > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Number of extra designs to waive fee for
+              </label>
+              <input
+                type="number"
+                min="0"
+                max={designCosts.extraDesigns}
+                value={designWaivers}
+                onChange={(e) => setDesignWaivers(Math.min(Number(e.target.value), designCosts.extraDesigns))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+          )}
+
+          {/* Sample Run */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="sample"
+                checked={sampleRun}
+                onChange={(e) => setSampleRun(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <label htmlFor="sample" className="text-sm font-medium text-gray-700">
+                Pre-production sample run ($65)
+              </label>
+            </div>
+            {sampleRun && (
+              <div className="ml-7 flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="waive-sample"
+                  checked={waiveSampleFee}
+                  onChange={(e) => setWaiveSampleFee(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="waive-sample" className="text-sm text-gray-600">
+                  Waive sample fee
+                </label>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* No printing notice */}
+      {!hasPrinting && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <p className="text-sm text-amber-800">
+            <strong>Devices Only Order:</strong> Design and sample options are not applicable.
+          </p>
         </div>
       )}
 
-      {/* Turnaround */}
+      {/* Turnaround - always show */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Turnaround
@@ -89,37 +135,7 @@ export function OrderSettings() {
         </select>
       </div>
 
-      {/* Sample Run */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            id="sample"
-            checked={sampleRun}
-            onChange={(e) => setSampleRun(e.target.checked)}
-            className="w-4 h-4"
-          />
-          <label htmlFor="sample" className="text-sm font-medium text-gray-700">
-            Pre-production sample run ($65)
-          </label>
-        </div>
-        {sampleRun && (
-          <div className="ml-7 flex items-center gap-3">
-            <input
-              type="checkbox"
-              id="waive-sample"
-              checked={waiveSampleFee}
-              onChange={(e) => setWaiveSampleFee(e.target.checked)}
-              className="w-4 h-4"
-            />
-            <label htmlFor="waive-sample" className="text-sm text-gray-600">
-              Waive sample fee
-            </label>
-          </div>
-        )}
-      </div>
-
-      {/* Shipping Section */}
+      {/* Shipping Section - always show */}
       <div className="space-y-3">
         <label className="block text-sm font-medium text-gray-700">Shipping</label>
         
@@ -185,7 +201,7 @@ export function OrderSettings() {
         </div>
       </div>
 
-      {/* Sales Tax */}
+      {/* Sales Tax - always show */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
           Sales Tax Rate (%)

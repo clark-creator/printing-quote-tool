@@ -1,7 +1,10 @@
 /**
  * Invoice template generator
  * Creates HTML invoice for printing/PDF export
+ * Supports print-only, devices-only, and print+devices line items
  */
+
+import { SERVICE_TYPES } from './pricing';
 
 /**
  * Generate invoice number
@@ -17,66 +20,79 @@ export function generateInvoiceNumber() {
 /**
  * Generate line items HTML for invoice
  * @param {Array} lineItems - Array of line item pricing data
- * @param {number} basePrice - Base price per unit
+ * @param {number} basePrice - Base price per unit for printing
  * @returns {string} HTML string for line items
  */
 function generateLineItemsHTML(lineItems, basePrice) {
   return lineItems.map((item) => {
     const rows = [];
+    const isDevicesOnly = item.serviceType === SERVICE_TYPES.DEVICES_ONLY;
+    const isPrintAndDevices = item.serviceType === SERVICE_TYPES.PRINT_AND_DEVICES;
     
-    // Line item header
+    // Line item header with service type badge
+    const serviceLabel = isDevicesOnly 
+      ? '🛒 Devices Only' 
+      : isPrintAndDevices 
+        ? '📦 Print + Devices' 
+        : '🖨️ Print Only';
+    
     rows.push(`
       <tr class="line-item-header">
         <td colspan="2" style="background: #f8f8f8; font-weight: bold; padding-top: 15px;">
           ${item.deviceName} (${item.quantity.toLocaleString()} units)
+          <span style="font-size: 11px; font-weight: normal; margin-left: 10px; color: #666;">
+            ${serviceLabel}
+          </span>
         </td>
       </tr>
     `);
     
-    // Base printing
-    rows.push(`
-      <tr>
-        <td style="padding-left: 20px;">Base Printing (${item.quantity.toLocaleString()} × $${basePrice.toFixed(2)})</td>
-        <td class="amount">$${item.basePrintingCost.toFixed(2)}</td>
-      </tr>
-    `);
-    
-    // Gloss finish
-    if (item.glossCost > 0) {
+    // Printing costs (if applicable)
+    if (!isDevicesOnly) {
       rows.push(`
         <tr>
-          <td style="padding-left: 20px;">Gloss Finish (${item.glossFinish === 'both-sides' ? 'both sides' : 'one side'})</td>
-          <td class="amount">$${item.glossCost.toFixed(2)}</td>
+          <td style="padding-left: 20px;">Printing (${item.quantity.toLocaleString()} × $${basePrice.toFixed(2)})</td>
+          <td class="amount">$${item.basePrintingCost.toFixed(2)}</td>
         </tr>
       `);
+      
+      // Gloss finish
+      if (item.glossCost > 0) {
+        rows.push(`
+          <tr>
+            <td style="padding-left: 20px;">Gloss Finish (${item.glossFinish === 'both-sides' ? 'both sides' : 'one side'})</td>
+            <td class="amount">$${item.glossCost.toFixed(2)}</td>
+          </tr>
+        `);
+      }
+      
+      // Double-sided
+      if (item.doubleSidedCost > 0) {
+        rows.push(`
+          <tr>
+            <td style="padding-left: 20px;">Double-sided Printing</td>
+            <td class="amount">$${item.doubleSidedCost.toFixed(2)}</td>
+          </tr>
+        `);
+      }
+      
+      // Packaging
+      if (item.packagingCost > 0) {
+        rows.push(`
+          <tr>
+            <td style="padding-left: 20px;">Packaging</td>
+            <td class="amount">$${item.packagingCost.toFixed(2)}</td>
+          </tr>
+        `);
+      }
     }
     
-    // Double-sided
-    if (item.doubleSidedCost > 0) {
+    // Device revenue (if applicable)
+    if (item.deviceRevenue > 0) {
       rows.push(`
         <tr>
-          <td style="padding-left: 20px;">Double-sided Printing</td>
-          <td class="amount">$${item.doubleSidedCost.toFixed(2)}</td>
-        </tr>
-      `);
-    }
-    
-    // Packaging
-    if (item.packagingCost > 0) {
-      rows.push(`
-        <tr>
-          <td style="padding-left: 20px;">Packaging</td>
-          <td class="amount">$${item.packagingCost.toFixed(2)}</td>
-        </tr>
-      `);
-    }
-    
-    // Devices
-    if (item.deviceSupplyCost > 0) {
-      rows.push(`
-        <tr>
-          <td style="padding-left: 20px;">Devices (${item.quantity.toLocaleString()} × $${item.deviceUnitPrice.toFixed(2)})</td>
-          <td class="amount">$${item.deviceSupplyCost.toFixed(2)}</td>
+          <td style="padding-left: 20px;">Devices (${item.quantity.toLocaleString()} × $${item.deviceSellingPrice.toFixed(2)})</td>
+          <td class="amount">$${item.deviceRevenue.toFixed(2)}</td>
         </tr>
       `);
     }
@@ -90,7 +106,7 @@ function generateLineItemsHTML(lineItems, basePrice) {
  * @param {Object} params - Order level charges
  * @returns {string} HTML string for order charges
  */
-function generateOrderChargesHTML({ setupFee, extraDesignCost, chargeableDesigns, turnaroundFee, turnaround, sampleFee }) {
+function generateOrderChargesHTML({ setupFee, extraDesignCost, chargeableDesigns, turnaroundFee, turnaround, sampleFee, hasPrinting }) {
   const rows = [];
   
   if (setupFee > 0 || extraDesignCost > 0 || turnaroundFee > 0 || sampleFee > 0) {
@@ -157,6 +173,7 @@ export function generateInvoiceHTML(data) {
     lineItems,
     basePrice,
     totalQuantity,
+    printQuantity,
     numDesigns,
     includedDesigns,
     turnaround,
@@ -165,11 +182,15 @@ export function generateInvoiceHTML(data) {
     chargeableDesigns,
     turnaroundFee,
     sampleFee,
+    printingSubtotal,
+    deviceRevenue,
     subtotal,
     salesTax,
     salesTaxRate,
     shippingCost,
-    totalQuote
+    totalQuote,
+    hasPrinting,
+    hasDevices
   } = data;
   
   const date = new Date();
@@ -180,8 +201,17 @@ export function generateInvoiceHTML(data) {
     chargeableDesigns,
     turnaroundFee,
     turnaround,
-    sampleFee
+    sampleFee,
+    hasPrinting
   });
+  
+  // Determine order type label
+  let orderTypeLabel = 'Print Order';
+  if (hasDevices && hasPrinting) {
+    orderTypeLabel = 'Print + Device Order';
+  } else if (hasDevices && !hasPrinting) {
+    orderTypeLabel = 'Device Order';
+  }
   
   return `
     <!DOCTYPE html>
@@ -284,6 +314,13 @@ export function generateInvoiceHTML(data) {
           font-style: italic;
           color: #666;
         }
+        .category-summary {
+          background: #f0f7ff;
+          padding: 10px;
+          border-radius: 5px;
+          margin-bottom: 10px;
+          font-size: 13px;
+        }
         .footer {
           text-align: center;
           margin-top: 50px;
@@ -310,6 +347,17 @@ export function generateInvoiceHTML(data) {
           font-size: 14px;
           margin-bottom: 20px;
         }
+        .order-type-badge {
+          display: inline-block;
+          padding: 4px 12px;
+          border-radius: 4px;
+          font-size: 12px;
+          font-weight: bold;
+          margin-top: 10px;
+        }
+        .order-type-print { background: #dbeafe; color: #1e40af; }
+        .order-type-devices { background: #fef3c7; color: #92400e; }
+        .order-type-mixed { background: #ede9fe; color: #5b21b6; }
       </style>
     </head>
     <body>
@@ -320,6 +368,9 @@ export function generateInvoiceHTML(data) {
       
       <div class="header">
         <h1>INVOICE</h1>
+        <span class="order-type-badge ${hasDevices && hasPrinting ? 'order-type-mixed' : hasDevices ? 'order-type-devices' : 'order-type-print'}">
+          ${orderTypeLabel}
+        </span>
       </div>
       
       <div class="info-section">
@@ -345,10 +396,19 @@ export function generateInvoiceHTML(data) {
         <div class="details-grid">
           <div><strong>Total Units:</strong> ${totalQuantity.toLocaleString()}</div>
           <div><strong>Line Items:</strong> ${lineItems.length}</div>
-          <div><strong>Designs:</strong> ${numDesigns} (${includedDesigns} included)</div>
+          ${hasPrinting ? `<div><strong>Print Units:</strong> ${printQuantity.toLocaleString()}</div>` : ''}
+          ${hasPrinting ? `<div><strong>Designs:</strong> ${numDesigns} (${includedDesigns} included)</div>` : ''}
           <div><strong>Turnaround:</strong> ${turnaround === 'normal' ? 'Normal' : turnaround === 'rush' ? 'Rush' : 'Weekend'}</div>
         </div>
       </div>
+      
+      ${(hasPrinting && hasDevices) ? `
+        <div class="category-summary">
+          <strong>Category Breakdown:</strong>
+          Printing: $${printingSubtotal.toFixed(2)} • 
+          Devices: $${deviceRevenue.toFixed(2)}
+        </div>
+      ` : ''}
       
       <table>
         <thead>
@@ -370,7 +430,7 @@ export function generateInvoiceHTML(data) {
         </div>
         <div class="totals-row per-unit">
           <span>Per unit:</span>
-          <span>$${(subtotal / totalQuantity).toFixed(3)}/device</span>
+          <span>$${(subtotal / totalQuantity).toFixed(3)}/unit</span>
         </div>
         ${salesTax > 0 ? `
           <div class="totals-row">

@@ -6,7 +6,8 @@ import {
   getSampleFee,
   getTurnaroundFee,
   calculateShippingCost,
-  calculateSalesTax
+  calculateSalesTax,
+  SERVICE_TYPES
 } from '../utils/pricing';
 import {
   getOptimizedPrinterCount,
@@ -27,9 +28,12 @@ import {
 export function useQuoteCalculations({
   // From useLineItems
   totalQuantity,
+  printQuantity,
   lineItemTotals,
   lineItemPricing,
   avgMinutesPerBatch,
+  hasPrinting,
+  hasDevices,
   
   // Order settings
   numDesigns,
@@ -47,20 +51,33 @@ export function useQuoteCalculations({
   // Printers
   numPrinters
 }) {
-  // Base price based on total quantity
-  const basePrice = useMemo(() => getBasePrice(totalQuantity), [totalQuantity]);
+  // Base price based on print quantity (not total quantity)
+  const basePrice = useMemo(() => getBasePrice(printQuantity), [printQuantity]);
   
-  // Setup fee
-  const setupFee = useMemo(() => getSetupFee(totalQuantity), [totalQuantity]);
+  // Setup fee (only for orders with printing)
+  const setupFee = useMemo(() => getSetupFee(printQuantity), [printQuantity]);
   
-  // Design costs
+  // Design costs (only for orders with printing)
   const designCosts = useMemo(() => 
-    calculateDesignCosts(totalQuantity, numDesigns, designWaivers),
-    [totalQuantity, numDesigns, designWaivers]
+    calculateDesignCosts(printQuantity, numDesigns, designWaivers),
+    [printQuantity, numDesigns, designWaivers]
   );
   
-  // Production time calculations
+  // Production time calculations (only for printing items)
   const productionMetrics = useMemo(() => {
+    // If no printing, return zeroes
+    if (!hasPrinting || lineItemTotals.totalBatches === 0) {
+      return {
+        optimizedPrinters: 0,
+        productionDays: 0,
+        batchesPerPrinterPerDay: 0,
+        totalBatchesPerDay: 0,
+        effectiveProductionHours: 0,
+        totalBatches: 0,
+        totalProductionHours: 0
+      };
+    }
+    
     const optimizedPrinters = getOptimizedPrinterCount(lineItemTotals.totalProductionHours, numPrinters);
     const { productionDays, batchesPerPrinterPerDay, totalBatchesPerDay } = calculateProductionDays(
       lineItemTotals.totalBatches,
@@ -78,28 +95,27 @@ export function useQuoteCalculations({
       totalBatches: lineItemTotals.totalBatches,
       totalProductionHours: lineItemTotals.totalProductionHours
     };
-  }, [lineItemTotals, avgMinutesPerBatch, numPrinters]);
+  }, [hasPrinting, lineItemTotals, avgMinutesPerBatch, numPrinters]);
   
   // Quote calculation
   const quoteBreakdown = useMemo(() => {
-    // Base quote from line items
-    const lineItemsSubtotal = lineItemTotals.basePrintingCost + 
-      lineItemTotals.glossCost + 
-      lineItemTotals.doubleSidedCost + 
-      lineItemTotals.packagingCost + 
-      lineItemTotals.deviceSupplyCost;
+    // Printing subtotal from line items
+    const printingSubtotal = lineItemTotals.printingSubtotal;
     
-    // Order-level charges
+    // Device revenue from line items
+    const deviceRevenue = lineItemTotals.deviceRevenue;
+    
+    // Order-level charges (only for printing)
     const extraDesignCost = designCosts.extraDesignCost;
     
     // Subtotal before turnaround
-    const subtotalBeforeTurnaround = lineItemsSubtotal + setupFee + extraDesignCost;
+    const subtotalBeforeTurnaround = printingSubtotal + deviceRevenue + setupFee + extraDesignCost;
     
-    // Turnaround fee
+    // Turnaround fee (applies to whole order)
     const turnaroundFee = getTurnaroundFee(turnaround, subtotalBeforeTurnaround);
     
-    // Sample fee
-    const sampleFee = getSampleFee(sampleRun, waiveSampleFee, totalQuantity);
+    // Sample fee (only for printing orders)
+    const sampleFee = getSampleFee(sampleRun, waiveSampleFee, printQuantity);
     
     // Subtotal
     const subtotal = subtotalBeforeTurnaround + turnaroundFee + sampleFee;
@@ -112,13 +128,18 @@ export function useQuoteCalculations({
     const totalQuote = subtotal + salesTax + shippingCost;
     
     return {
-      // Line item totals
+      // Printing totals
       basePrintingCost: lineItemTotals.basePrintingCost,
       glossCost: lineItemTotals.glossCost,
       doubleSidedCost: lineItemTotals.doubleSidedCost,
       packagingCost: lineItemTotals.packagingCost,
-      deviceSupplyCost: lineItemTotals.deviceSupplyCost,
-      lineItemsSubtotal,
+      printingSubtotal,
+      
+      // Device revenue
+      deviceRevenue,
+      
+      // Combined line items subtotal
+      lineItemsSubtotal: printingSubtotal + deviceRevenue,
       
       // Order-level charges
       setupFee,
@@ -141,7 +162,7 @@ export function useQuoteCalculations({
     turnaround,
     sampleRun,
     waiveSampleFee,
-    totalQuantity,
+    printQuantity,
     salesTaxRate,
     shippingType,
     shopifyQuote,
@@ -150,32 +171,37 @@ export function useQuoteCalculations({
   
   // Cost floor calculation
   const costFloorBreakdown = useMemo(() => {
-    // Pre-production
-    const preProduction = calculatePreProductionCosts({
+    // Pre-production (only for printing)
+    const preProduction = hasPrinting ? calculatePreProductionCosts({
       numDesigns,
       productionDays: productionMetrics.productionDays,
       sampleRun,
       waiveSampleFee
-    });
+    }) : { total: 0, fileSetupCost: 0, machineSetupCost: 0, samplePrintingCost: 0, fileSetupPerDesign: 10, machineSetupPerDay: 23 };
     
-    // Production (ink + labor)
-    const production = calculateProductionCosts({
+    // Production (ink + labor - only for printing)
+    const production = hasPrinting ? calculateProductionCosts({
       totalInkCost: lineItemTotals.totalInkCost,
       effectiveProductionHours: productionMetrics.effectiveProductionHours
-    });
+    }) : { total: 0, inkCost: 0, laborCost: 0, laborPerHour: 23, effectiveHours: 0 };
     
-    // Post-production
-    const postProduction = calculatePostProductionCosts(lineItemTotals.repackagingCost);
+    // Post-production (only for printing)
+    const postProduction = hasPrinting 
+      ? calculatePostProductionCosts(lineItemTotals.repackagingCost)
+      : { total: 0, repackagingCost: 0, shippingStagingCost: 0 };
     
     // Shipping staging details (for transparent display)
     const shippingStaging = calculateShippingStagingCost();
+    
+    // Device cost floor
+    const deviceCostFloor = lineItemTotals.deviceCostFloor;
     
     // Total cost floor
     const costFloor = calculateTotalCostFloor({
       preProductionCost: preProduction.total,
       productionCost: production.total,
       postProductionCost: postProduction.total,
-      deviceCostFloor: lineItemTotals.deviceCostFloor
+      deviceCostFloor
     });
     
     return {
@@ -183,7 +209,7 @@ export function useQuoteCalculations({
       production,
       postProduction,
       shippingStaging,
-      deviceCostFloor: lineItemTotals.deviceCostFloor,
+      deviceCostFloor,
       total: costFloor.total,
       
       // Individual cost floor items from line items
@@ -193,6 +219,7 @@ export function useQuoteCalculations({
       repackagingCost: lineItemTotals.repackagingCost
     };
   }, [
+    hasPrinting,
     numDesigns,
     productionMetrics,
     sampleRun,
@@ -222,7 +249,11 @@ export function useQuoteCalculations({
     costFloorBreakdown,
     
     // Profit
-    profitAnalysis
+    profitAnalysis,
+    
+    // Order type flags
+    hasPrinting,
+    hasDevices
   };
 }
 
@@ -248,16 +279,19 @@ export function generateQuoteData({
   designWaivers,
   numPrinters,
   totalQuantity,
+  printQuantity,
   quoteBreakdown,
   costFloorBreakdown,
   profitAnalysis,
-  productionMetrics
+  productionMetrics,
+  hasPrinting,
+  hasDevices
 }) {
   return {
     id: currentQuoteId || `quote-${Date.now()}`,
     clientName,
     accountManager,
-    lineItems: lineItems.map((item, index) => ({
+    lineItems: lineItems.map((item) => ({
       ...item,
       deviceTypeName: deviceTypes[item.deviceIndex]?.name || ''
     })),
@@ -273,6 +307,9 @@ export function generateQuoteData({
     numPrinters,
     // Summary values
     totalQuantity,
+    printQuantity,
+    hasPrinting,
+    hasDevices,
     // Calculated values
     totalQuote: quoteBreakdown.totalQuote,
     costFloor: costFloorBreakdown.total,
@@ -296,11 +333,14 @@ export function generateInvoiceData({
   lineItemPricing,
   basePrice,
   totalQuantity,
+  printQuantity,
   numDesigns,
   designCosts,
   turnaround,
   quoteBreakdown,
-  salesTaxRate
+  salesTaxRate,
+  hasPrinting,
+  hasDevices
 }) {
   return {
     clientName,
@@ -308,6 +348,7 @@ export function generateInvoiceData({
     lineItems: lineItemPricing,
     basePrice,
     totalQuantity,
+    printQuantity,
     numDesigns,
     includedDesigns: designCosts.includedDesigns,
     turnaround,
@@ -316,10 +357,14 @@ export function generateInvoiceData({
     chargeableDesigns: quoteBreakdown.chargeableDesigns,
     turnaroundFee: quoteBreakdown.turnaroundFee,
     sampleFee: quoteBreakdown.sampleFee,
+    printingSubtotal: quoteBreakdown.printingSubtotal,
+    deviceRevenue: quoteBreakdown.deviceRevenue,
     subtotal: quoteBreakdown.subtotal,
     salesTax: quoteBreakdown.salesTax,
     salesTaxRate,
     shippingCost: quoteBreakdown.shippingCost,
-    totalQuote: quoteBreakdown.totalQuote
+    totalQuote: quoteBreakdown.totalQuote,
+    hasPrinting,
+    hasDevices
   };
 }

@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { useLocalStorage, DEFAULT_DEVICE_TYPES, DEFAULT_ACCOUNT_MANAGERS, STORAGE_KEYS } from '../hooks/useLocalStorage';
+import { useLocalStorage, DEFAULT_DEVICE_TYPES, DEFAULT_ACCOUNT_MANAGERS, STORAGE_KEYS, migrateDeviceTypes } from '../hooks/useLocalStorage';
 import { useLineItems } from '../hooks/useLineItems';
 import { useQuoteCalculations, generateQuoteData, generateInvoiceData } from '../hooks/useQuoteCalculations';
 import { generateInvoiceNumber, generateInvoiceHTML, openInvoice } from '../utils/invoiceTemplate';
-import { MINIMUM_ORDER_QUANTITY } from '../utils/pricing';
+import { MINIMUM_ORDER_QUANTITY, generateDevicePricingTiers, DEFAULT_DEVICE_PRICING_TIERS } from '../utils/pricing';
 
 // Create the context
 const QuoteContext = createContext(null);
@@ -15,9 +15,12 @@ export function QuoteProvider({ children }) {
   // ============================================
   // PERSISTENT STATE (localStorage)
   // ============================================
-  const [deviceTypes, setDeviceTypes] = useLocalStorage(STORAGE_KEYS.DEVICE_TYPES, DEFAULT_DEVICE_TYPES);
+  const [rawDeviceTypes, setRawDeviceTypes] = useLocalStorage(STORAGE_KEYS.DEVICE_TYPES, DEFAULT_DEVICE_TYPES);
   const [accountManagers, setAccountManagers] = useLocalStorage(STORAGE_KEYS.ACCOUNT_MANAGERS, DEFAULT_ACCOUNT_MANAGERS);
   const [savedQuotes, setSavedQuotes] = useLocalStorage(STORAGE_KEYS.SAVED_QUOTES, []);
+
+  // Ensure device types have pricing tiers (migration)
+  const deviceTypes = useMemo(() => migrateDeviceTypes(rawDeviceTypes), [rawDeviceTypes]);
 
   // ============================================
   // ORDER-LEVEL STATE
@@ -68,10 +71,13 @@ export function QuoteProvider({ children }) {
     setAllLineItems,
     resetLineItems,
     totalQuantity,
+    printQuantity,
     lineItemCalculations,
     lineItemPricing,
     lineItemTotals,
-    avgMinutesPerBatch
+    avgMinutesPerBatch,
+    hasPrinting,
+    hasDevices
   } = useLineItems(deviceTypes);
 
   // ============================================
@@ -87,9 +93,12 @@ export function QuoteProvider({ children }) {
     profitAnalysis
   } = useQuoteCalculations({
     totalQuantity,
+    printQuantity,
     lineItemTotals,
     lineItemPricing,
     avgMinutesPerBatch,
+    hasPrinting,
+    hasDevices,
     numDesigns,
     designWaivers,
     turnaround,
@@ -136,27 +145,44 @@ export function QuoteProvider({ children }) {
   // ============================================
   // DEVICE TYPE MANAGEMENT
   // ============================================
-  const addDeviceType = useCallback((name, capacity, unitCost) => {
+  const addDeviceType = useCallback((name, capacity, unitCost, pricingTiers = null) => {
     if (name.trim()) {
-      setDeviceTypes(prev => [...prev, { name: name.trim(), capacity, unitCost }]);
+      const tiers = pricingTiers || generateDevicePricingTiers(unitCost);
+      setRawDeviceTypes(prev => [...prev, { name: name.trim(), capacity, unitCost, pricingTiers: tiers }]);
       return true;
     }
     return false;
-  }, [setDeviceTypes]);
+  }, [setRawDeviceTypes]);
 
-  const updateDeviceType = useCallback((index, name, capacity, unitCost) => {
-    setDeviceTypes(prev => {
+  const updateDeviceType = useCallback((index, name, capacity, unitCost, pricingTiers = null) => {
+    setRawDeviceTypes(prev => {
       const updated = [...prev];
-      updated[index] = { name, capacity, unitCost };
+      const existingTiers = updated[index]?.pricingTiers;
+      updated[index] = { 
+        name, 
+        capacity, 
+        unitCost, 
+        pricingTiers: pricingTiers || existingTiers || generateDevicePricingTiers(unitCost)
+      };
       return updated;
     });
-  }, [setDeviceTypes]);
+  }, [setRawDeviceTypes]);
+
+  const updateDevicePricingTiers = useCallback((index, pricingTiers) => {
+    setRawDeviceTypes(prev => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], pricingTiers };
+      }
+      return updated;
+    });
+  }, [setRawDeviceTypes]);
 
   const deleteDeviceType = useCallback((index) => {
     if (deviceTypes.length <= 1) return false;
-    setDeviceTypes(prev => prev.filter((_, i) => i !== index));
+    setRawDeviceTypes(prev => prev.filter((_, i) => i !== index));
     return true;
-  }, [deviceTypes.length, setDeviceTypes]);
+  }, [deviceTypes.length, setRawDeviceTypes]);
 
   // ============================================
   // ACCOUNT MANAGER MANAGEMENT
@@ -204,10 +230,13 @@ export function QuoteProvider({ children }) {
       designWaivers,
       numPrinters,
       totalQuantity,
+      printQuantity,
       quoteBreakdown,
       costFloorBreakdown,
       profitAnalysis,
-      productionMetrics
+      productionMetrics,
+      hasPrinting,
+      hasDevices
     });
 
     const existingIndex = savedQuotes.findIndex(q => q.id === currentQuoteId);
@@ -230,8 +259,8 @@ export function QuoteProvider({ children }) {
     clientName, currentQuoteId, accountManager, lineItems, deviceTypes,
     numDesigns, turnaround, sampleRun, waiveSampleFee, shippingType,
     shopifyQuote, shippingMarkup, salesTaxRate, designWaivers, numPrinters,
-    totalQuantity, quoteBreakdown, costFloorBreakdown, profitAnalysis,
-    productionMetrics, savedQuotes, setSavedQuotes
+    totalQuantity, printQuantity, quoteBreakdown, costFloorBreakdown, profitAnalysis,
+    productionMetrics, hasPrinting, hasDevices, savedQuotes, setSavedQuotes
   ]);
 
   const loadQuote = useCallback((quote) => {
@@ -247,12 +276,10 @@ export function QuoteProvider({ children }) {
         id: 'item-1',
         deviceIndex: quote.selectedDevice || 0,
         quantity: quote.quantity || 1000,
+        serviceType: quote.supplyingDevices ? 'print-and-devices' : 'print-only',
         sides: quote.sides || 'single',
         glossFinish: quote.glossFinish || 'none',
-        packaging: quote.packaging || 'loose',
-        supplyingDevices: quote.supplyingDevices || false,
-        deviceCost: quote.deviceCost || 0,
-        deviceMarkup: quote.deviceMarkup || 30
+        packaging: quote.packaging || 'loose'
       }]);
     }
 
@@ -317,11 +344,14 @@ export function QuoteProvider({ children }) {
       lineItemPricing,
       basePrice,
       totalQuantity,
+      printQuantity,
       numDesigns,
       designCosts,
       turnaround,
       quoteBreakdown,
-      salesTaxRate
+      salesTaxRate,
+      hasPrinting,
+      hasDevices
     });
     
     const html = generateInvoiceHTML({
@@ -332,27 +362,30 @@ export function QuoteProvider({ children }) {
     openInvoice(html, invoiceNumber);
   }, [
     clientName, accountManager, lineItemPricing, basePrice,
-    totalQuantity, numDesigns, designCosts, turnaround,
-    quoteBreakdown, salesTaxRate
+    totalQuantity, printQuantity, numDesigns, designCosts, turnaround,
+    quoteBreakdown, salesTaxRate, hasPrinting, hasDevices
   ]);
 
   // ============================================
   // CSV EXPORT
   // ============================================
   const exportToCSV = useCallback(() => {
-    const headers = ['Date', 'Client', 'Account Manager', 'Total Quantity', 'Line Items', 'Total Quote', 'Cost Floor', 'Profit', 'Margin %', 'Status', 'Production Days'];
+    const headers = ['Date', 'Client', 'Account Manager', 'Total Quantity', 'Print Qty', 'Line Items', 'Total Quote', 'Cost Floor', 'Profit', 'Margin %', 'Status', 'Production Days', 'Has Printing', 'Has Devices'];
     const rows = savedQuotes.map(q => [
       new Date(q.createdAt).toLocaleDateString(),
       q.clientName,
       q.accountManager,
       q.totalQuantity || q.quantity,
+      q.printQuantity || q.totalQuantity || q.quantity,
       q.lineItems?.length || 1,
       q.totalQuote?.toFixed(2),
       q.costFloor?.toFixed(2),
       q.profit?.toFixed(2),
       q.profitMargin?.toFixed(1),
       q.status,
-      q.productionDays
+      q.productionDays,
+      q.hasPrinting !== false ? 'Yes' : 'No',
+      q.hasDevices ? 'Yes' : 'No'
     ]);
 
     const csvContent = [headers, ...rows].map(row => row.map(cell => `"${cell || ''}"`).join(',')).join('\n');
@@ -373,6 +406,7 @@ export function QuoteProvider({ children }) {
     deviceTypes,
     addDeviceType,
     updateDeviceType,
+    updateDevicePricingTiers,
     deleteDeviceType,
     
     // Account managers
@@ -404,9 +438,12 @@ export function QuoteProvider({ children }) {
     removeLineItem,
     updateLineItem,
     totalQuantity,
+    printQuantity,
     lineItemCalculations,
     lineItemPricing,
     lineItemTotals,
+    hasPrinting,
+    hasDevices,
     
     // Calculations
     basePrice,

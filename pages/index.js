@@ -11,7 +11,8 @@ import {
   FileText,
   Printer,
   Settings,
-  Package
+  Package,
+  ShoppingBag
 } from 'lucide-react';
 
 // Context Provider
@@ -57,7 +58,10 @@ function CalculatorContent() {
     lineItems,
     addLineItem,
     totalQuantity,
+    printQuantity,
     lineItemPricing,
+    hasPrinting,
+    hasDevices,
     
     // UI state
     showDeviceManager,
@@ -89,6 +93,13 @@ function CalculatorContent() {
     productionMetrics,
     isBelowMinimum
   } = useQuote();
+
+  // Determine order type label
+  const getOrderTypeLabel = () => {
+    if (hasPrinting && hasDevices) return 'Mixed Order (Print + Devices)';
+    if (hasDevices) return 'Devices Only Order';
+    return 'Print Order';
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
@@ -223,13 +234,15 @@ function CalculatorContent() {
 
           {/* Settings Row */}
           <div className="flex gap-2 mb-6 flex-wrap">
-            <button
-              onClick={() => setShowPrinterSettings(!showPrinterSettings)}
-              className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700"
-            >
-              <Printer className="w-4 h-4" />
-              Printers ({numPrinters})
-            </button>
+            {hasPrinting && (
+              <button
+                onClick={() => setShowPrinterSettings(!showPrinterSettings)}
+                className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700"
+              >
+                <Printer className="w-4 h-4" />
+                Printers ({numPrinters})
+              </button>
+            )}
             <button
               onClick={() => setShowManagerEditor(!showManagerEditor)}
               className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700"
@@ -242,7 +255,7 @@ function CalculatorContent() {
               className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
             >
               <Settings className="w-4 h-4" />
-              Devices
+              Devices & Pricing
             </button>
           </div>
 
@@ -305,26 +318,52 @@ function CalculatorContent() {
                   </button>
                 </div>
 
-                {/* Total Quantity Summary */}
-                <div
-                  className={`mb-4 p-3 rounded-lg ${
-                    isBelowMinimum
-                      ? 'bg-amber-50 border border-amber-300'
-                      : 'bg-blue-50 border border-blue-200'
-                  }`}
-                >
+                {/* Order Type & Quantity Summary */}
+                <div className={`mb-4 p-3 rounded-lg ${
+                  isBelowMinimum
+                    ? 'bg-amber-50 border border-amber-300'
+                    : hasPrinting && hasDevices
+                      ? 'bg-purple-50 border border-purple-200'
+                      : hasDevices
+                        ? 'bg-amber-50 border border-amber-200'
+                        : 'bg-blue-50 border border-blue-200'
+                }`}>
+                  {/* Order Type Badge */}
+                  <div className="flex items-center gap-2 mb-2">
+                    {hasDevices && !hasPrinting && <ShoppingBag className="w-4 h-4 text-amber-600" />}
+                    {hasPrinting && !hasDevices && <Printer className="w-4 h-4 text-blue-600" />}
+                    {hasPrinting && hasDevices && <Package className="w-4 h-4 text-purple-600" />}
+                    <span className={`text-sm font-medium ${
+                      hasPrinting && hasDevices
+                        ? 'text-purple-700'
+                        : hasDevices
+                          ? 'text-amber-700'
+                          : 'text-blue-700'
+                    }`}>
+                      {getOrderTypeLabel()}
+                    </span>
+                  </div>
+
                   <div className="flex justify-between items-center">
                     <span className="font-medium text-gray-700">Total Quantity:</span>
-                    <span
-                      className={`text-lg font-bold ${
-                        isBelowMinimum ? 'text-amber-600' : 'text-blue-600'
-                      }`}
-                    >
+                    <span className={`text-lg font-bold ${
+                      isBelowMinimum ? 'text-amber-600' : 'text-gray-900'
+                    }`}>
                       {totalQuantity.toLocaleString()} units
                     </span>
                   </div>
+
+                  {hasPrinting && printQuantity !== totalQuantity && (
+                    <div className="flex justify-between items-center text-sm mt-1">
+                      <span className="text-gray-600">Print Quantity:</span>
+                      <span className="font-medium text-blue-600">
+                        {printQuantity.toLocaleString()} units
+                      </span>
+                    </div>
+                  )}
+
                   {isBelowMinimum && (
-                    <p className="text-xs text-amber-600 mt-1">
+                    <p className="text-xs text-amber-600 mt-2">
                       Below minimum order quantity ({MINIMUM_ORDER_QUANTITY} units)
                     </p>
                   )}
@@ -346,27 +385,42 @@ function CalculatorContent() {
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-800">Calculations</h2>
 
-              {/* Pricing Tier */}
-              <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
-                <h3 className="font-semibold text-blue-900 mb-2">Pricing Tier</h3>
-                <div className="text-sm text-blue-800">
-                  <p>
-                    Base Price: ${basePrice.toFixed(2)} per unit{' '}
-                    <span className="text-xs text-blue-600">
-                      (based on {totalQuantity.toLocaleString()} total units)
-                    </span>
-                  </p>
-                  {setupFee > 0 && <p>Setup Fee: ${setupFee.toFixed(2)}</p>}
-                  <p className="text-xs mt-2 text-blue-600">
-                    Production: {productionMetrics.productionDays} day
-                    {productionMetrics.productionDays !== 1 ? 's' : ''} •{' '}
-                    {productionMetrics.totalBatches} batch
-                    {productionMetrics.totalBatches !== 1 ? 'es' : ''} •{' '}
-                    {productionMetrics.optimizedPrinters} printer
-                    {productionMetrics.optimizedPrinters !== 1 ? 's' : ''}
+              {/* Pricing Tier - Only show if there's printing */}
+              {hasPrinting && (
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-blue-900 mb-2">Printing Pricing Tier</h3>
+                  <div className="text-sm text-blue-800">
+                    <p>
+                      Base Price: ${basePrice.toFixed(2)} per unit{' '}
+                      <span className="text-xs text-blue-600">
+                        (based on {printQuantity.toLocaleString()} print units)
+                      </span>
+                    </p>
+                    {setupFee > 0 && <p>Setup Fee: ${setupFee.toFixed(2)}</p>}
+                    <p className="text-xs mt-2 text-blue-600">
+                      Production: {productionMetrics.productionDays} day
+                      {productionMetrics.productionDays !== 1 ? 's' : ''} •{' '}
+                      {productionMetrics.totalBatches} batch
+                      {productionMetrics.totalBatches !== 1 ? 'es' : ''} •{' '}
+                      {productionMetrics.optimizedPrinters} printer
+                      {productionMetrics.optimizedPrinters !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Devices Only Notice */}
+              {!hasPrinting && hasDevices && (
+                <div className="bg-amber-50 border-2 border-amber-200 rounded-lg p-4">
+                  <h3 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                    <ShoppingBag className="w-5 h-5" />
+                    Devices Only Order
+                  </h3>
+                  <p className="text-sm text-amber-800">
+                    No printing services included. Device prices are based on quantity tiers.
                   </p>
                 </div>
-              </div>
+              )}
 
               {/* Quote Breakdown */}
               <QuoteBreakdown />
