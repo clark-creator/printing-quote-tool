@@ -60,19 +60,19 @@ export const DEFAULT_DEVICE_TYPES = [
   { 
     name: '1mg Disposable', 
     capacity: 88, 
-    unitCost: 2.05,
+    unitCost: 1.85,
     pricingTiers: DEFAULT_DEVICE_PRICING_TIERS['1mg Disposable']
   },
   { 
     name: '2mg Disposable', 
     capacity: 77, 
-    unitCost: 2.50,
+    unitCost: 2.05,
     pricingTiers: DEFAULT_DEVICE_PRICING_TIERS['2mg Disposable']
   },
   { 
     name: 'MK Lighter', 
     capacity: 80, 
-    unitCost: 1.75,
+    unitCost: 0.60,
     pricingTiers: DEFAULT_DEVICE_PRICING_TIERS['MK Lighter']
   }
 ];
