@@ -46,11 +46,11 @@ export const DEFAULT_DEVICE_PRICING_TIERS = {
   ],
   'MK Lighter': [
     { minQty: 10000, price: 0.80 },
-    { minQty: 5000, price: 0.87 },
+    { minQty: 5000, price: 0.85 },
     { minQty: 3000, price: 0.95 },
-    { minQty: 1000, price: 1.03 },
-    { minQty: 100, price: 1.18 },
-    { minQty: 0, price: 1.18 }
+    { minQty: 1000, price: 1.00 },
+    { minQty: 100, price: 1.20 },
+    { minQty: 0, price: 1.20 }
   ]
 };
 
