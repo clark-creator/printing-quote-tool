@@ -65,7 +65,7 @@ export const DEFAULT_DEVICE_TYPES = [
   },
   { 
     name: '2mg Disposable', 
-    capacity: 77, 
+    capacity: 66, 
     unitCost: 2.05,
     pricingTiers: DEFAULT_DEVICE_PRICING_TIERS['2mg Disposable']
   },
